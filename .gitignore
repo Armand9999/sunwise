@@ -1,0 +1,16 @@
+.next/
+node_modules/
+.vercel/
+supabase/.temp/
+
+.env*.local
+*.log
+sunwise-*.png
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+dist/
+coverage/

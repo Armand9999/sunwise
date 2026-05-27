@@ -1,0 +1,693 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { Session, User } from "@supabase/supabase-js";
+import { activities, defaultForecast, defaultPreferences, hobbyOptions, hourly } from "@/lib/sunwise/data";
+import { outfitFor, rankActivities } from "@/lib/sunwise/guardrails";
+import type { Hobby, Intensity, Preferences, RecommendationResult, Style, Venue } from "@/lib/sunwise/types";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+
+type PreferenceRow = {
+  hobbies: Hobby[] | null;
+  intensity: Intensity | null;
+  venue: Venue | null;
+  heat_sensitive: boolean | null;
+  sun_sensitive: boolean | null;
+  budget: number | null;
+  accessibility: boolean | null;
+  outfit_style: Style | null;
+};
+
+type ProfileRow = {
+  location: string | null;
+  phone_e164: string | null;
+  sms_enabled: boolean | null;
+  daily_send_time: string | null;
+};
+
+type RecommendationRow = {
+  created_at: string;
+  guardrails_applied: string[];
+  model: string | null;
+  outfit: string;
+  recommendations: RecommendationResult["recommendations"];
+  sms_copy: string;
+  source: RecommendationResult["source"];
+};
+
+function formatSendTime(time: string) {
+  const [hour, minute] = time.split(":").map(Number);
+  const suffix = hour >= 12 ? "PM" : "AM";
+  const displayHour = hour % 12 || 12;
+  return `${displayHour}:${minute.toString().padStart(2, "0")} ${suffix}`;
+}
+
+function normalizeTime(time: string | null | undefined) {
+  return time?.slice(0, 5) || defaultPreferences.sendTime;
+}
+
+function dbRowsToPreferences(profile: ProfileRow | null, preference: PreferenceRow | null): Preferences {
+  return {
+    ...defaultPreferences,
+    location: profile?.location || defaultPreferences.location,
+    smsEnabled: profile?.sms_enabled ?? defaultPreferences.smsEnabled,
+    sendTime: normalizeTime(profile?.daily_send_time),
+    hobbies: preference?.hobbies?.length ? preference.hobbies : defaultPreferences.hobbies,
+    intensity: preference?.intensity || defaultPreferences.intensity,
+    venue: preference?.venue || defaultPreferences.venue,
+    heatSensitive: preference?.heat_sensitive ?? defaultPreferences.heatSensitive,
+    sunSensitive: preference?.sun_sensitive ?? defaultPreferences.sunSensitive,
+    budget: preference?.budget ?? defaultPreferences.budget,
+    accessibility: preference?.accessibility ?? defaultPreferences.accessibility,
+    style: preference?.outfit_style || defaultPreferences.style
+  };
+}
+
+function Icon({ name }: { name: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="icon">
+      {name === "sun" && (
+        <>
+          <circle cx="12" cy="12" r="4.5" />
+          <path d="M12 2.5v3M12 18.5v3M4.9 4.9 7 7M17 17l2.1 2.1M2.5 12h3M18.5 12h3M4.9 19.1 7 17M17 7l2.1-2.1" />
+        </>
+      )}
+      {name === "cloud" && <path d="M6.5 18h10.2a4.4 4.4 0 0 0 .3-8.8A6.3 6.3 0 0 0 5.1 11 3.6 3.6 0 0 0 6.5 18Z" />}
+      {name === "rain" && (
+        <>
+          <path d="M6.5 15.5h10.2a4.1 4.1 0 0 0 .3-8.2A6 6 0 0 0 5.2 9.2a3.4 3.4 0 0 0 1.3 6.3Z" />
+          <path d="m8 18-1 2M13 18l-1 2M18 18l-1 2" />
+        </>
+      )}
+      {name === "message" && <path d="M5 5.5h14v9.8H9.4L5 19.1V5.5Z" />}
+      {name === "shirt" && <path d="M9 4.5 12 6l3-1.5 4 3-2.2 3L15 9.4v10.1H9V9.4l-1.8 1.1L5 7.5l4-3Z" />}
+      {name === "check" && <path d="m5 12.5 4.2 4.2L19 7" />}
+    </svg>
+  );
+}
+
+export default function Home() {
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+  const [preferences, setPreferences] = useState<Preferences>(defaultPreferences);
+  const [selected, setSelected] = useState(0);
+  const [saved, setSaved] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isAuthLoading, setIsAuthLoading] = useState(Boolean(supabase));
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
+  const [authMode, setAuthMode] = useState<"signin" | "signup">("signup");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [authMessage, setAuthMessage] = useState("");
+  const [recommendationResult, setRecommendationResult] = useState<RecommendationResult | null>(null);
+  const [generationError, setGenerationError] = useState("");
+  const [lastSavedPlanAt, setLastSavedPlanAt] = useState("");
+
+  const loadProfile = useCallback(
+    async (user: User) => {
+      if (!supabase) {
+        return;
+      }
+
+      const [profileResponse, preferenceResponse, recommendationResponse] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select("location, phone_e164, sms_enabled, daily_send_time")
+          .eq("id", user.id)
+          .maybeSingle<ProfileRow>(),
+        supabase
+          .from("preference_profiles")
+          .select("hobbies, intensity, venue, heat_sensitive, sun_sensitive, budget, accessibility, outfit_style")
+          .eq("user_id", user.id)
+          .maybeSingle<PreferenceRow>(),
+        supabase
+          .from("daily_recommendations")
+          .select("created_at, guardrails_applied, model, outfit, recommendations, sms_copy, source")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle<RecommendationRow>()
+      ]);
+
+      if (!profileResponse.error && !preferenceResponse.error) {
+        setPreferences(dbRowsToPreferences(profileResponse.data, preferenceResponse.data));
+        setPhoneNumber(profileResponse.data?.phone_e164 || "");
+        setSaved(true);
+      }
+
+      if (!recommendationResponse.error && recommendationResponse.data) {
+        setRecommendationResult({
+          source: recommendationResponse.data.source,
+          generatedAt: recommendationResponse.data.created_at,
+          forecast: { ...defaultForecast, location: profileResponse.data?.location || defaultForecast.location },
+          recommendations: recommendationResponse.data.recommendations,
+          outfit: recommendationResponse.data.outfit,
+          smsCopy: recommendationResponse.data.sms_copy,
+          guardrailsApplied: recommendationResponse.data.guardrails_applied
+        });
+        setLastSavedPlanAt(recommendationResponse.data.created_at);
+      }
+    },
+    [supabase]
+  );
+
+  useEffect(() => {
+    if (!supabase) {
+      return;
+    }
+
+    let mounted = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) {
+        return;
+      }
+      setSession(data.session);
+      setIsAuthLoading(false);
+      if (data.session?.user) {
+        void loadProfile(data.session.user);
+      }
+    });
+
+    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      if (nextSession?.user) {
+        void loadProfile(nextSession.user);
+      }
+    });
+
+    return () => {
+      mounted = false;
+      data.subscription.unsubscribe();
+    };
+  }, [loadProfile, supabase]);
+
+  const localActivities = useMemo(
+    () => rankActivities(activities, preferences, { ...defaultForecast, location: preferences.location }),
+    [preferences]
+  );
+  const rankedActivities = recommendationResult?.recommendations ?? localActivities;
+  const topActivity = rankedActivities[selected] ?? rankedActivities[0];
+  const outfit = recommendationResult?.outfit ?? outfitFor(preferences, { ...defaultForecast, location: preferences.location });
+  const smsCopy = recommendationResult?.smsCopy;
+
+  const updatePreferences = (next: Preferences) => {
+    setSaved(false);
+    setRecommendationResult(null);
+    setLastSavedPlanAt("");
+    setGenerationError("");
+    setSelected(0);
+    setPreferences(next);
+  };
+
+  const toggleHobby = (hobby: Hobby) => {
+    updatePreferences({
+      ...preferences,
+      hobbies: preferences.hobbies.includes(hobby)
+        ? preferences.hobbies.filter((item) => item !== hobby)
+        : [...preferences.hobbies, hobby]
+    });
+  };
+
+  const handleAuth = async () => {
+    if (!supabase) {
+      setAuthMessage("Add NEXT_PUBLIC_SUPABASE_ANON_KEY to .env.local to enable sign up.");
+      return;
+    }
+
+    setAuthMessage("");
+    setIsAuthLoading(true);
+    const credentials = { email, password, options: { data: { display_name: email.split("@")[0] } } };
+    const response =
+      authMode === "signup"
+        ? await supabase.auth.signUp(credentials)
+        : await supabase.auth.signInWithPassword({ email, password });
+
+    setIsAuthLoading(false);
+
+    if (response.error) {
+      setAuthMessage(response.error.message);
+      return;
+    }
+
+    setAuthMessage(authMode === "signup" ? "Account created. Check your email if confirmation is enabled." : "Signed in.");
+  };
+
+  const signOut = async () => {
+    if (!supabase) {
+      return;
+    }
+    await supabase.auth.signOut();
+    setSession(null);
+    setSaved(false);
+    setRecommendationResult(null);
+    setLastSavedPlanAt("");
+  };
+
+  const saveProfile = async () => {
+    if (!supabase || !session?.user) {
+      setAuthMessage("Sign in to save preferences to Supabase.");
+      return false;
+    }
+
+    setIsSavingProfile(true);
+    setAuthMessage("");
+
+    const [profileResponse, preferenceResponse] = await Promise.all([
+      supabase.from("profiles").upsert({
+        id: session.user.id,
+        display_name: session.user.email,
+        location: preferences.location,
+        phone_e164: phoneNumber || null,
+        sms_enabled: preferences.smsEnabled,
+        daily_send_time: preferences.sendTime,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Toronto"
+      }),
+      supabase.from("preference_profiles").upsert({
+        user_id: session.user.id,
+        hobbies: preferences.hobbies,
+        intensity: preferences.intensity,
+        venue: preferences.venue,
+        heat_sensitive: preferences.heatSensitive,
+        sun_sensitive: preferences.sunSensitive,
+        budget: preferences.budget,
+        accessibility: preferences.accessibility,
+        outfit_style: preferences.style
+      })
+    ]);
+
+    setIsSavingProfile(false);
+
+    if (profileResponse.error || preferenceResponse.error) {
+      setAuthMessage(profileResponse.error?.message || preferenceResponse.error?.message || "Could not save preferences.");
+      return false;
+    }
+
+    setSaved(true);
+    setAuthMessage("Preferences saved to Supabase.");
+    return true;
+  };
+
+  const saveRecommendation = async (result: RecommendationResult) => {
+    if (!supabase || !session?.user) {
+      return false;
+    }
+
+    const response = await supabase.from("daily_recommendations").insert({
+      user_id: session.user.id,
+      recommendation_date: new Date().toISOString().slice(0, 10),
+      source: result.source,
+      model: result.source === "openai" ? "configured-openai-model" : null,
+      recommendations: result.recommendations,
+      outfit: result.outfit,
+      sms_copy: result.smsCopy,
+      guardrails_applied: result.guardrailsApplied
+    });
+
+    if (response.error) {
+      setAuthMessage(response.error.message);
+      return false;
+    }
+
+    setLastSavedPlanAt(new Date().toISOString());
+    return true;
+  };
+
+  const generateDailyPlan = async () => {
+    setIsGenerating(true);
+    setGenerationError("");
+    try {
+      const response = await fetch("/api/recommendations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ preferences })
+      });
+      if (!response.ok) {
+        throw new Error("Recommendation request failed");
+      }
+      const result = (await response.json()) as RecommendationResult;
+      setRecommendationResult(result);
+      setSelected(0);
+      const profileSaved = await saveProfile();
+      const planSaved = await saveRecommendation(result);
+      if (profileSaved && planSaved) {
+        setAuthMessage("Preferences and daily plan saved to Supabase.");
+      }
+    } catch {
+      setGenerationError("Could not generate a fresh plan. Showing the local weather-safe ranking.");
+      await saveProfile();
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <main className="app-shell">
+      <aside className="sidebar" aria-label="Primary">
+        <div className="brand">
+          <span className="brand-mark">S</span>
+          <span>Sunwise</span>
+        </div>
+        <nav className="nav-list">
+          <a className="nav-item active" href="#today">Today</a>
+          <a className="nav-item" href="#activities">Activities</a>
+          <a className="nav-item" href="#wardrobe">Wardrobe</a>
+          <a className="nav-item" href="#texts">Texts</a>
+        </nav>
+        <div className="digest-card">
+          <Icon name="message" />
+          <p>Morning digest</p>
+          <strong>{preferences.smsEnabled ? `Send at ${formatSendTime(preferences.sendTime)}` : "Paused"}</strong>
+        </div>
+      </aside>
+
+      <section className="workspace">
+        <header className="topbar">
+          <div>
+            <p className="muted">Tuesday, June 2</p>
+            <h1>Today in {preferences.location}</h1>
+          </div>
+          <div className="location-control">
+            <span aria-hidden="true">+</span>
+            <input
+              aria-label="Location"
+              value={preferences.location}
+              onChange={(event) => updatePreferences({ ...preferences, location: event.target.value })}
+            />
+          </div>
+        </header>
+
+        <div className="content-grid">
+          <section className="main-column" id="today">
+            <div className="weather-panel">
+              <div className="weather-hero">
+                <div>
+                  <p className="muted">{defaultForecast.summary}</p>
+                  <div className="temp-row">
+                    <span>{defaultForecast.temperatureC}C</span>
+                    <Icon name="sun" />
+                  </div>
+                  <p>Feels like {defaultForecast.feelsLikeC}. Best window: {defaultForecast.bestWindow}.</p>
+                </div>
+                <div className="weather-metrics">
+                  <div>
+                    <strong>UV {defaultForecast.uvIndex}</strong>
+                    <span>High</span>
+                  </div>
+                  <div>
+                    <strong>Rain {defaultForecast.rainChance}%</strong>
+                    <span>Late day</span>
+                  </div>
+                  <div>
+                    <strong>{defaultForecast.windKph} km/h</strong>
+                    <span>West wind</span>
+                  </div>
+                </div>
+              </div>
+              <div className="hourly-strip" aria-label="Hourly forecast">
+                {hourly.map((hour) => (
+                  <div className="hour-cell" key={hour.time}>
+                    <span>{hour.time}</span>
+                    <Icon name={hour.icon} />
+                    <strong>{hour.temp} deg</strong>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <section className="recommendations" id="activities">
+              <div className="section-title">
+                <div>
+                  <h2>Recommended for your summer</h2>
+                  <p className="source-line">
+                    {recommendationResult
+                      ? `${recommendationResult.source === "openai" ? "AI-enhanced" : "Local"} plan generated`
+                      : "Local weather-safe preview"}
+                  </p>
+                  {lastSavedPlanAt && <p className="saved-plan-line">Saved {new Date(lastSavedPlanAt).toLocaleString()}</p>}
+                </div>
+                <p>Ranked from hobbies, weather comfort, budget, and preferred intensity.</p>
+              </div>
+              <div className="activity-list">
+                {rankedActivities.map((activity, index) => (
+                  <button
+                    className={`activity-card ${index === selected ? "selected" : ""}`}
+                    key={activity.id}
+                    onClick={() => setSelected(index)}
+                  >
+                    <span className="score">{activity.score}% fit</span>
+                    <strong>{activity.title}</strong>
+                    <span>{activity.time}</span>
+                    <p>{activity.forecast}</p>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <div className="detail-row">
+              <section className="insight-panel">
+                <h2>{topActivity.title}</h2>
+                <p>{topActivity.aiReason ?? topActivity.reason}</p>
+                <dl>
+                  <div>
+                    <dt>Best window</dt>
+                    <dd>{topActivity.time}</dd>
+                  </div>
+                  <div>
+                    <dt>Budget</dt>
+                    <dd>${topActivity.cost} estimate</dd>
+                  </div>
+                </dl>
+                {topActivity.safetyNotes.length > 0 && (
+                  <ul className="safety-list">
+                    {topActivity.safetyNotes.slice(0, 2).map((note) => (
+                      <li key={note}>{note}</li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+
+              <section className="outfit-panel" id="wardrobe">
+                <div className="panel-heading">
+                  <Icon name="shirt" />
+                  <h2>Wear today</h2>
+                </div>
+                <p>Wear: {outfit}</p>
+                {smsCopy && <p className="sms-preview">{smsCopy}</p>}
+              </section>
+            </div>
+          </section>
+
+          <aside className="preferences-panel" id="texts" aria-label="Preferences questionnaire">
+            <section className="auth-panel">
+              <div>
+                <p className="muted">Account</p>
+                <h2>{session ? "Signed in" : "Save your summer profile"}</h2>
+              </div>
+              {session ? (
+                <div className="signed-in-row">
+                  <span>{session.user.email}</span>
+                  <button type="button" onClick={signOut}>Sign out</button>
+                </div>
+              ) : (
+                <>
+                  <div className="segmented auth-mode">
+                    <button
+                      type="button"
+                      className={authMode === "signup" ? "active" : ""}
+                      onClick={() => setAuthMode("signup")}
+                    >
+                      Sign up
+                    </button>
+                    <button
+                      type="button"
+                      className={authMode === "signin" ? "active" : ""}
+                      onClick={() => setAuthMode("signin")}
+                    >
+                      Sign in
+                    </button>
+                  </div>
+                  <label className="field">
+                    <span>Email</span>
+                    <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />
+                  </label>
+                  <label className="field">
+                    <span>Password</span>
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      placeholder="At least 6 characters"
+                    />
+                  </label>
+                  <button className="secondary-button" type="button" onClick={handleAuth} disabled={isAuthLoading}>
+                    {isAuthLoading ? "Checking..." : authMode === "signup" ? "Create account" : "Sign in"}
+                  </button>
+                </>
+              )}
+              {!supabase && <p className="notice-text">Supabase auth is waiting for the anon key in .env.local.</p>}
+              {authMessage && <p className="notice-text">{authMessage}</p>}
+            </section>
+
+            <div className="panel-top">
+              <div>
+                <p className="muted">Questionnaire</p>
+                <h2>Preferences</h2>
+              </div>
+              <span className="progress">7/9</span>
+            </div>
+
+            <label className="toggle-row">
+              <span>
+                <strong>Daily text</strong>
+                <small>{preferences.smsEnabled ? `Send at ${formatSendTime(preferences.sendTime)}` : "Off"}</small>
+              </span>
+              <input
+                type="checkbox"
+                checked={preferences.smsEnabled}
+                onChange={(event) => updatePreferences({ ...preferences, smsEnabled: event.target.checked })}
+              />
+            </label>
+
+            <label className="field">
+              <span>Phone number</span>
+              <input
+                value={phoneNumber}
+                onChange={(event) => {
+                  setPhoneNumber(event.target.value);
+                  setSaved(false);
+                }}
+                placeholder="+14165550123"
+              />
+            </label>
+
+            <label className="field">
+              <span>Text time</span>
+              <input
+                type="time"
+                value={preferences.sendTime}
+                onChange={(event) => updatePreferences({ ...preferences, sendTime: event.target.value })}
+              />
+            </label>
+
+            <fieldset>
+              <legend>Summer hobbies</legend>
+              <div className="chip-grid">
+                {hobbyOptions.map((hobby) => (
+                  <button
+                    type="button"
+                    className={preferences.hobbies.includes(hobby) ? "chip active" : "chip"}
+                    key={hobby}
+                    onClick={() => toggleHobby(hobby)}
+                  >
+                    {hobby}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Activity intensity</legend>
+              <div className="segmented">
+                {(["Easy", "Balanced", "Active"] as Intensity[]).map((item) => (
+                  <button
+                    type="button"
+                    className={preferences.intensity === item ? "active" : ""}
+                    key={item}
+                    onClick={() => updatePreferences({ ...preferences, intensity: item })}
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Venue preference</legend>
+              <div className="segmented">
+                {(["Outdoor", "Mixed", "Indoor"] as Venue[]).map((item) => (
+                  <button
+                    type="button"
+                    className={preferences.venue === item ? "active" : ""}
+                    key={item}
+                    onClick={() => updatePreferences({ ...preferences, venue: item })}
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+
+            <div className="check-grid">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={preferences.heatSensitive}
+                  onChange={(event) => updatePreferences({ ...preferences, heatSensitive: event.target.checked })}
+                />
+                Heat sensitive
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={preferences.sunSensitive}
+                  onChange={(event) => updatePreferences({ ...preferences, sunSensitive: event.target.checked })}
+                />
+                Sun sensitive
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={preferences.accessibility}
+                  onChange={(event) => updatePreferences({ ...preferences, accessibility: event.target.checked })}
+                />
+                Step-free ideas
+              </label>
+            </div>
+
+            <label className="field">
+              <span>Daily budget: ${preferences.budget}</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={preferences.budget}
+                onChange={(event) => updatePreferences({ ...preferences, budget: Number(event.target.value) })}
+              />
+            </label>
+
+            <fieldset>
+              <legend>Outfit style</legend>
+              <div className="segmented">
+                {(["Breezy", "Sporty", "Polished"] as Style[]).map((item) => (
+                  <button
+                    type="button"
+                    className={preferences.style === item ? "active" : ""}
+                    key={item}
+                    onClick={() => updatePreferences({ ...preferences, style: item })}
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+
+            {generationError && <p className="error-text">{generationError}</p>}
+            <button className="save-button" onClick={generateDailyPlan} disabled={isGenerating || isSavingProfile}>
+              {isGenerating || isSavingProfile ? (
+                "Saving..."
+              ) : saved ? (
+                <>
+                  <Icon name="check" /> Saved
+                </>
+              ) : (
+                "Save preferences"
+              )}
+            </button>
+          </aside>
+        </div>
+      </section>
+    </main>
+  );
+}
