@@ -8,6 +8,7 @@ type AdminData = {
   summary: {
     users: number;
     smsEnabled: number;
+    smsVerified: number;
     due: number;
     recentSent: number;
     recentFailed: number;
@@ -20,6 +21,7 @@ type AdminData = {
     daily_send_time: string;
     timezone: string;
     localTime: string;
+    verified: boolean;
   }>;
   deliveries: Array<{
     id: string;
@@ -221,6 +223,10 @@ export default function AdminPage() {
             <div>
               <span>SMS enabled</span>
               <strong>{data.summary.smsEnabled}</strong>
+            </div>
+            <div>
+              <span>Verified texts</span>
+              <strong>{data.summary.smsVerified}</strong>
             </div>
             <div>
               <span>Due now</span>

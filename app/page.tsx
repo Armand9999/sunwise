@@ -22,6 +22,9 @@ type ProfileRow = {
   location: string | null;
   phone_e164: string | null;
   sms_enabled: boolean | null;
+  sms_verified_at: string | null;
+  sms_verified_phone_e164: string | null;
+  sms_consent_at: string | null;
   daily_send_time: string | null;
 };
 
@@ -53,6 +56,9 @@ function isValidEmail(value: string) {
 function isValidE164(value: string) {
   return /^\+[1-9]\d{7,14}$/.test(value);
 }
+
+const SMS_CONSENT_TEXT =
+  "I agree to receive recurring automated daily Sunwise weather and activity text messages. Message and data rates may apply. Reply STOP to opt out.";
 
 function dbRowsToPreferences(profile: ProfileRow | null, preference: PreferenceRow | null): Preferences {
   return {
@@ -107,6 +113,14 @@ export default function Home() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
+  const [verifiedPhone, setVerifiedPhone] = useState("");
+  const [smsVerifiedAt, setSmsVerifiedAt] = useState("");
+  const [smsConsentAt, setSmsConsentAt] = useState("");
+  const [smsConsentAccepted, setSmsConsentAccepted] = useState(false);
+  const [verificationCode, setVerificationCode] = useState("");
+  const [isSendingCode, setIsSendingCode] = useState(false);
+  const [isVerifyingCode, setIsVerifyingCode] = useState(false);
+  const [verificationMessage, setVerificationMessage] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const [signupNeedsConfirmation, setSignupNeedsConfirmation] = useState(false);
   const [recommendationResult, setRecommendationResult] = useState<RecommendationResult | null>(null);
@@ -122,7 +136,7 @@ export default function Home() {
       const [profileResponse, preferenceResponse, recommendationResponse] = await Promise.all([
         supabase
           .from("profiles")
-          .select("location, phone_e164, sms_enabled, daily_send_time")
+          .select("location, phone_e164, sms_enabled, sms_verified_at, sms_verified_phone_e164, sms_consent_at, daily_send_time")
           .eq("id", user.id)
           .maybeSingle<ProfileRow>(),
         supabase
@@ -142,6 +156,10 @@ export default function Home() {
       if (!profileResponse.error && !preferenceResponse.error) {
         setPreferences(dbRowsToPreferences(profileResponse.data, preferenceResponse.data));
         setPhoneNumber(profileResponse.data?.phone_e164 || "");
+        setVerifiedPhone(profileResponse.data?.sms_verified_phone_e164 || "");
+        setSmsVerifiedAt(profileResponse.data?.sms_verified_at || "");
+        setSmsConsentAt(profileResponse.data?.sms_consent_at || "");
+        setSmsConsentAccepted(Boolean(profileResponse.data?.sms_consent_at));
         setSaved(true);
       }
 
@@ -200,12 +218,15 @@ export default function Home() {
   const topActivity = rankedActivities[selected] ?? rankedActivities[0];
   const outfit = recommendationResult?.outfit ?? outfitFor(preferences, { ...defaultForecast, location: preferences.location });
   const smsCopy = recommendationResult?.smsCopy;
-  const phoneIsReady = !preferences.smsEnabled || isValidE164(phoneNumber);
+  const phoneFormatReady = isValidE164(phoneNumber);
+  const phoneVerified = phoneFormatReady && verifiedPhone === phoneNumber && Boolean(smsVerifiedAt);
+  const smsConsentReady = phoneVerified && Boolean(smsConsentAt) && smsConsentAccepted;
+  const phoneIsReady = !preferences.smsEnabled || (phoneVerified && smsConsentReady);
   const authCanSubmit = isValidEmail(email) && password.length >= 6 && !isAuthLoading;
   const onboardingItems = [
     { label: session ? "Account signed in" : signupNeedsConfirmation ? "Confirm email" : "Create account", done: Boolean(session) },
     { label: "Location set", done: preferences.location.trim().length > 1 },
-    { label: preferences.smsEnabled ? "Phone ready" : "Texts optional", done: phoneIsReady },
+    { label: preferences.smsEnabled ? "Phone verified" : "Texts optional", done: phoneIsReady },
     { label: "Hobbies selected", done: preferences.hobbies.length > 0 },
     { label: "First plan saved", done: Boolean(recommendationResult || lastSavedPlanAt) }
   ];
@@ -286,6 +307,108 @@ export default function Home() {
     setLastSavedPlanAt("");
   };
 
+  const authHeader = async () => {
+    if (!supabase) {
+      return null;
+    }
+
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    return token ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } : null;
+  };
+
+  const requestSmsCode = async () => {
+    if (!session?.user) {
+      setVerificationMessage("Sign in before verifying a phone number.");
+      return;
+    }
+
+    if (!phoneFormatReady) {
+      setVerificationMessage("Use E.164 format, like +14165550123.");
+      return;
+    }
+
+    const headers = await authHeader();
+    if (!headers) {
+      setVerificationMessage("Sign in again before requesting a code.");
+      return;
+    }
+
+    setIsSendingCode(true);
+    setVerificationMessage("");
+
+    try {
+      const response = await fetch("/api/sms-verification/request", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ phone: phoneNumber })
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not send verification code.");
+      }
+
+      setVerifiedPhone("");
+      setSmsVerifiedAt("");
+      setSmsConsentAt("");
+      setSmsConsentAccepted(false);
+      setPreferences({ ...preferences, smsEnabled: false });
+      setVerificationMessage(
+        payload.deliveryStatus === "dry_run"
+          ? "Verification code recorded as a dry run because Twilio is not configured."
+          : "Verification code sent."
+      );
+    } catch (error) {
+      setVerificationMessage(error instanceof Error ? error.message : "Could not send verification code.");
+    } finally {
+      setIsSendingCode(false);
+    }
+  };
+
+  const verifySmsCode = async () => {
+    if (!session?.user) {
+      setVerificationMessage("Sign in before verifying a phone number.");
+      return;
+    }
+
+    if (!smsConsentAccepted) {
+      setVerificationMessage("Check the consent box before enabling daily texts.");
+      return;
+    }
+
+    const headers = await authHeader();
+    if (!headers) {
+      setVerificationMessage("Sign in again before verifying the code.");
+      return;
+    }
+
+    setIsVerifyingCode(true);
+    setVerificationMessage("");
+
+    try {
+      const response = await fetch("/api/sms-verification/verify", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ phone: phoneNumber, code: verificationCode, consent: smsConsentAccepted })
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not verify phone.");
+      }
+
+      setVerifiedPhone(payload.phone);
+      setSmsVerifiedAt(payload.smsVerifiedAt);
+      setSmsConsentAt(payload.smsConsentAt);
+      setVerificationCode("");
+      setPreferences({ ...preferences, smsEnabled: true });
+      setVerificationMessage("Phone verified. Daily texts are enabled.");
+    } catch (error) {
+      setVerificationMessage(error instanceof Error ? error.message : "Could not verify phone.");
+    } finally {
+      setIsVerifyingCode(false);
+    }
+  };
+
   const saveProfile = async () => {
     if (!supabase || !session?.user) {
       setAuthMessage("Sign in to save preferences to Supabase.");
@@ -293,7 +416,7 @@ export default function Home() {
     }
 
     if (!phoneIsReady) {
-      setAuthMessage("Enter a phone number in E.164 format, like +14165550123, or turn daily text off.");
+      setAuthMessage("Verify your phone and consent to daily texts, or turn daily text off.");
       return false;
     }
 
@@ -306,7 +429,7 @@ export default function Home() {
         display_name: session.user.email,
         location: preferences.location,
         phone_e164: phoneNumber || null,
-        sms_enabled: preferences.smsEnabled,
+        sms_enabled: preferences.smsEnabled && phoneVerified && smsConsentReady,
         daily_send_time: preferences.sendTime,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Toronto"
       }),
@@ -614,7 +737,13 @@ export default function Home() {
               <input
                 type="checkbox"
                 checked={preferences.smsEnabled}
-                onChange={(event) => updatePreferences({ ...preferences, smsEnabled: event.target.checked })}
+                onChange={(event) => {
+                  if (event.target.checked && !smsConsentReady) {
+                    setVerificationMessage("Verify your phone and consent before enabling daily texts.");
+                    return;
+                  }
+                  updatePreferences({ ...preferences, smsEnabled: event.target.checked });
+                }}
               />
             </label>
 
@@ -624,14 +753,70 @@ export default function Home() {
                 value={phoneNumber}
                 onChange={(event) => {
                   setPhoneNumber(event.target.value);
+                  setVerifiedPhone("");
+                  setSmsVerifiedAt("");
+                  setSmsConsentAt("");
+                  setSmsConsentAccepted(false);
+                  setVerificationCode("");
+                  setVerificationMessage("");
+                  updatePreferences({ ...preferences, smsEnabled: false });
                   setSaved(false);
                 }}
                 placeholder="+14165550123"
               />
               <small className="field-hint">
-                {preferences.smsEnabled && !phoneIsReady ? "Use E.164 format, including country code." : "Used only for daily texts."}
+                {!phoneFormatReady && phoneNumber
+                  ? "Use E.164 format, including country code."
+                  : phoneVerified
+                    ? "Verified for daily Sunwise texts."
+                    : "Used only for daily texts."}
               </small>
             </label>
+
+            <section className="sms-verification-panel">
+              <div className="admin-stats">
+                <span className={phoneVerified ? "status-pill good" : "status-pill soft"}>
+                  {phoneVerified ? "Phone verified" : "Verification needed"}
+                </span>
+                <span className={smsConsentReady ? "status-pill good" : "status-pill soft"}>
+                  {smsConsentReady ? "Consent recorded" : "Consent needed"}
+                </span>
+              </div>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={requestSmsCode}
+                disabled={!session || !phoneFormatReady || isSendingCode}
+              >
+                {isSendingCode ? "Sending..." : phoneVerified ? "Send new code" : "Send verification code"}
+              </button>
+              <label className="check-consent">
+                <input
+                  type="checkbox"
+                  checked={smsConsentAccepted}
+                  onChange={(event) => setSmsConsentAccepted(event.target.checked)}
+                />
+                <span>{SMS_CONSENT_TEXT}</span>
+              </label>
+              <div className="verify-code-row">
+                <input
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={verificationCode}
+                  onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="6-digit code"
+                />
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={verifySmsCode}
+                  disabled={!session || verificationCode.length !== 6 || !smsConsentAccepted || isVerifyingCode}
+                >
+                  {isVerifyingCode ? "Verifying..." : "Verify"}
+                </button>
+              </div>
+              {verificationMessage && <p className="notice-text">{verificationMessage}</p>}
+            </section>
 
             <label className="field">
               <span>Text time</span>

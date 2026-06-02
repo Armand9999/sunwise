@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { defaultPreferences } from "./data";
 import { generateRecommendations } from "./recommendations";
+import { sendSms } from "./sms";
 import type { Hobby, Intensity, Preferences, RecommendationResult, Style, Venue } from "./types";
 import { getForecastForLocation } from "./weather";
 
@@ -10,6 +11,9 @@ type ProfileRow = {
   location: string;
   phone_e164: string | null;
   sms_enabled: boolean;
+  sms_verified_at: string | null;
+  sms_verified_phone_e164: string | null;
+  sms_consent_at: string | null;
   daily_send_time: string;
   timezone: string;
 };
@@ -23,15 +27,6 @@ type PreferenceRow = {
   budget: number | null;
   accessibility: boolean | null;
   outfit_style: Style | null;
-};
-
-type DeliveryStatus = "sent" | "dry_run" | "failed";
-
-type SmsResult = {
-  status: DeliveryStatus;
-  provider: "twilio" | "dry_run";
-  providerMessageId?: string;
-  error?: string;
 };
 
 export type DailyDigestRunResult = {
@@ -79,7 +74,13 @@ function minutesFromTime(time: string) {
 }
 
 function isProfileDue(profile: ProfileRow, now: Date, windowMinutes: number) {
-  if (!profile.sms_enabled || !profile.phone_e164) {
+  if (
+    !profile.sms_enabled ||
+    !profile.phone_e164 ||
+    profile.sms_verified_phone_e164 !== profile.phone_e164 ||
+    !profile.sms_verified_at ||
+    !profile.sms_consent_at
+  ) {
     return false;
   }
 
@@ -102,48 +103,6 @@ function rowsToPreferences(profile: ProfileRow, preference: PreferenceRow | null
     budget: preference?.budget ?? defaultPreferences.budget,
     accessibility: preference?.accessibility ?? defaultPreferences.accessibility,
     style: preference?.outfit_style || defaultPreferences.style
-  };
-}
-
-function smsCredentialsConfigured() {
-  return Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM_PHONE);
-}
-
-async function sendSms(to: string, body: string): Promise<SmsResult> {
-  if (!smsCredentialsConfigured()) {
-    return {
-      status: "dry_run",
-      provider: "dry_run"
-    };
-  }
-
-  const accountSid = process.env.TWILIO_ACCOUNT_SID!;
-  const authToken = process.env.TWILIO_AUTH_TOKEN!;
-  const from = process.env.TWILIO_FROM_PHONE!;
-  const payload = new URLSearchParams({ To: to, From: from, Body: body });
-  const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString("base64")}`,
-      "Content-Type": "application/x-www-form-urlencoded"
-    },
-    body: payload
-  });
-
-  const data = (await response.json().catch(() => ({}))) as { sid?: string; message?: string };
-
-  if (!response.ok) {
-    return {
-      status: "failed",
-      provider: "twilio",
-      error: data.message || `Twilio returned ${response.status}`
-    };
-  }
-
-  return {
-    status: "sent",
-    provider: "twilio",
-    providerMessageId: data.sid
   };
 }
 
@@ -214,9 +173,11 @@ export async function runDailyDigestDelivery(
 
     const { data: profiles, error: profileError } = await supabase
       .from("profiles")
-      .select("id, display_name, location, phone_e164, sms_enabled, daily_send_time, timezone")
+      .select("id, display_name, location, phone_e164, sms_enabled, sms_verified_at, sms_verified_phone_e164, sms_consent_at, daily_send_time, timezone")
       .eq("sms_enabled", true)
       .not("phone_e164", "is", null)
+      .not("sms_verified_at", "is", null)
+      .not("sms_consent_at", "is", null)
       .limit(limit);
 
     if (profileError) {

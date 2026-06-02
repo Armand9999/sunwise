@@ -8,6 +8,9 @@ type ProfileRow = {
   location: string;
   phone_e164: string | null;
   sms_enabled: boolean;
+  sms_verified_at: string | null;
+  sms_verified_phone_e164: string | null;
+  sms_consent_at: string | null;
   daily_send_time: string;
   timezone: string;
   created_at: string;
@@ -73,10 +76,16 @@ function maskPhone(phone: string | null) {
 function profileStatus(profile: ProfileRow, now: Date, windowMinutes: number) {
   const local = localDateTimeParts(now, profile.timezone);
   const delta = minutesFromTime(local.time) - minutesFromTime(profile.daily_send_time);
-  const due = profile.sms_enabled && Boolean(profile.phone_e164) && delta >= 0 && delta < windowMinutes;
+  const verified =
+    Boolean(profile.phone_e164) &&
+    profile.sms_verified_phone_e164 === profile.phone_e164 &&
+    Boolean(profile.sms_verified_at) &&
+    Boolean(profile.sms_consent_at);
+  const due = profile.sms_enabled && verified && delta >= 0 && delta < windowMinutes;
   return {
     ...profile,
     phone_e164: maskPhone(profile.phone_e164),
+    verified,
     due,
     localDate: local.date,
     localTime: local.time
@@ -96,7 +105,7 @@ async function getAdminDigestStatus(request: Request) {
   const [profilesResponse, deliveriesResponse, recommendationsResponse, runsResponse] = await Promise.all([
     supabase
       .from("profiles")
-      .select("id, display_name, location, phone_e164, sms_enabled, daily_send_time, timezone, created_at")
+      .select("id, display_name, location, phone_e164, sms_enabled, sms_verified_at, sms_verified_phone_e164, sms_consent_at, daily_send_time, timezone, created_at")
       .order("created_at", { ascending: false })
       .limit(50),
     supabase
@@ -143,6 +152,7 @@ async function getAdminDigestStatus(request: Request) {
     summary: {
       users: profiles.length,
       smsEnabled: profiles.filter((profile) => profile.sms_enabled).length,
+      smsVerified: profiles.filter((profile) => profile.verified).length,
       due: profiles.filter((profile) => profile.due).length,
       recentSent: sent,
       recentFailed: failed

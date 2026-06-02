@@ -640,6 +640,45 @@ legend {
   font-weight: 850;
 }
 
+.sms-verification-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.sms-verification-panel .admin-stats {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.check-consent {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  align-items: start;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
+.check-consent input {
+  margin-top: 3px;
+}
+
+.verify-code-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.verify-code-row input {
+  min-width: 0;
+}
+
 .save-button:disabled {
   cursor: wait;
   opacity: 0.72;
