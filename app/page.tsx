@@ -46,6 +46,14 @@ function normalizeTime(time: string | null | undefined) {
   return time?.slice(0, 5) || defaultPreferences.sendTime;
 }
 
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function isValidE164(value: string) {
+  return /^\+[1-9]\d{7,14}$/.test(value);
+}
+
 function dbRowsToPreferences(profile: ProfileRow | null, preference: PreferenceRow | null): Preferences {
   return {
     ...defaultPreferences,
@@ -100,6 +108,7 @@ export default function Home() {
   const [password, setPassword] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [authMessage, setAuthMessage] = useState("");
+  const [signupNeedsConfirmation, setSignupNeedsConfirmation] = useState(false);
   const [recommendationResult, setRecommendationResult] = useState<RecommendationResult | null>(null);
   const [generationError, setGenerationError] = useState("");
   const [lastSavedPlanAt, setLastSavedPlanAt] = useState("");
@@ -191,6 +200,16 @@ export default function Home() {
   const topActivity = rankedActivities[selected] ?? rankedActivities[0];
   const outfit = recommendationResult?.outfit ?? outfitFor(preferences, { ...defaultForecast, location: preferences.location });
   const smsCopy = recommendationResult?.smsCopy;
+  const phoneIsReady = !preferences.smsEnabled || isValidE164(phoneNumber);
+  const authCanSubmit = isValidEmail(email) && password.length >= 6 && !isAuthLoading;
+  const onboardingItems = [
+    { label: session ? "Account signed in" : signupNeedsConfirmation ? "Confirm email" : "Create account", done: Boolean(session) },
+    { label: "Location set", done: preferences.location.trim().length > 1 },
+    { label: preferences.smsEnabled ? "Phone ready" : "Texts optional", done: phoneIsReady },
+    { label: "Hobbies selected", done: preferences.hobbies.length > 0 },
+    { label: "First plan saved", done: Boolean(recommendationResult || lastSavedPlanAt) }
+  ];
+  const onboardingDone = onboardingItems.filter((item) => item.done).length;
 
   const updatePreferences = (next: Preferences) => {
     setSaved(false);
@@ -216,6 +235,11 @@ export default function Home() {
       return;
     }
 
+    if (!isValidEmail(email) || password.length < 6) {
+      setAuthMessage("Use a valid email and a password with at least 6 characters.");
+      return;
+    }
+
     setAuthMessage("");
     setIsAuthLoading(true);
     const credentials = { email, password, options: { data: { display_name: email.split("@")[0] } } };
@@ -231,7 +255,24 @@ export default function Home() {
       return;
     }
 
-    setAuthMessage(authMode === "signup" ? "Account created. Check your email if confirmation is enabled." : "Signed in.");
+    if (authMode === "signup" && !response.data.session) {
+      setSignupNeedsConfirmation(true);
+      setAuthMessage("Account created. Check your email to confirm, then sign in.");
+      return;
+    }
+
+    setSignupNeedsConfirmation(false);
+    setAuthMessage(authMode === "signup" ? "Account created and signed in." : "Signed in.");
+  };
+
+  const resendConfirmation = async () => {
+    if (!supabase || !isValidEmail(email)) {
+      setAuthMessage("Enter the email you used to sign up.");
+      return;
+    }
+
+    const response = await supabase.auth.resend({ type: "signup", email });
+    setAuthMessage(response.error ? response.error.message : "Confirmation email sent again.");
   };
 
   const signOut = async () => {
@@ -248,6 +289,11 @@ export default function Home() {
   const saveProfile = async () => {
     if (!supabase || !session?.user) {
       setAuthMessage("Sign in to save preferences to Supabase.");
+      return false;
+    }
+
+    if (!phoneIsReady) {
+      setAuthMessage("Enter a phone number in E.164 format, like +14165550123, or turn daily text off.");
       return false;
     }
 
@@ -480,6 +526,23 @@ export default function Home() {
           </section>
 
           <aside className="preferences-panel" id="texts" aria-label="Preferences questionnaire">
+            <section className="onboarding-panel" aria-label="Onboarding progress">
+              <div className="panel-top">
+                <div>
+                  <p className="muted">Onboarding</p>
+                  <h2>{onboardingDone}/5 ready</h2>
+                </div>
+                <span className="progress">{Math.round((onboardingDone / onboardingItems.length) * 100)}%</span>
+              </div>
+              <div className="onboarding-list">
+                {onboardingItems.map((item) => (
+                  <span className={item.done ? "done" : ""} key={item.label}>
+                    {item.label}
+                  </span>
+                ))}
+              </div>
+            </section>
+
             <section className="auth-panel">
               <div>
                 <p className="muted">Account</p>
@@ -521,9 +584,14 @@ export default function Home() {
                       placeholder="At least 6 characters"
                     />
                   </label>
-                  <button className="secondary-button" type="button" onClick={handleAuth} disabled={isAuthLoading}>
+                  <button className="secondary-button" type="button" onClick={handleAuth} disabled={!authCanSubmit}>
                     {isAuthLoading ? "Checking..." : authMode === "signup" ? "Create account" : "Sign in"}
                   </button>
+                  {signupNeedsConfirmation && (
+                    <button className="secondary-button" type="button" onClick={resendConfirmation}>
+                      Resend confirmation
+                    </button>
+                  )}
                 </>
               )}
               {!supabase && <p className="notice-text">Supabase auth is waiting for the anon key in .env.local.</p>}
@@ -560,6 +628,9 @@ export default function Home() {
                 }}
                 placeholder="+14165550123"
               />
+              <small className="field-hint">
+                {preferences.smsEnabled && !phoneIsReady ? "Use E.164 format, including country code." : "Used only for daily texts."}
+              </small>
             </label>
 
             <label className="field">
@@ -674,7 +745,7 @@ export default function Home() {
             </fieldset>
 
             {generationError && <p className="error-text">{generationError}</p>}
-            <button className="save-button" onClick={generateDailyPlan} disabled={isGenerating || isSavingProfile}>
+            <button className="save-button" onClick={generateDailyPlan} disabled={isGenerating || isSavingProfile || !phoneIsReady}>
               {isGenerating || isSavingProfile ? (
                 "Saving..."
               ) : saved ? (

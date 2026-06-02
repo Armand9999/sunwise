@@ -668,6 +668,251 @@ legend {
   margin: 0;
 }
 
+.admin-shell {
+  min-height: 100vh;
+  padding: 28px;
+  background:
+    linear-gradient(135deg, #ffffff 0%, var(--page) 48%, #effaf4 100%);
+}
+
+.admin-header,
+.admin-controls,
+.admin-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.admin-header {
+  margin-bottom: 22px;
+}
+
+.admin-header h1 {
+  margin: 0;
+  font-size: 34px;
+  line-height: 1.05;
+}
+
+.admin-header a {
+  color: var(--accent-strong);
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.admin-controls,
+.admin-panel,
+.admin-stats-grid div {
+  border: 1px solid rgba(217, 232, 232, 0.9);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: var(--shadow);
+}
+
+.admin-controls {
+  align-items: end;
+  padding: 18px;
+  margin-bottom: 18px;
+}
+
+.admin-controls .field {
+  flex: 1 1 220px;
+}
+
+.admin-controls button {
+  min-width: 150px;
+}
+
+.admin-message {
+  margin-bottom: 18px;
+}
+
+.admin-panel {
+  padding: 20px;
+  margin-top: 18px;
+}
+
+.admin-panel h2 {
+  margin: 0 0 14px;
+  font-size: 20px;
+}
+
+.admin-stats,
+.admin-stats-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-stats {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.admin-stats span,
+.admin-stats-grid div {
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.admin-stats-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.admin-stats-grid div {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-stats-grid strong {
+  color: var(--ink);
+  font-size: 28px;
+}
+
+.admin-section-title p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.admin-table {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 0.8fr 1.2fr;
+  gap: 12px;
+  align-items: center;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.admin-row.head {
+  background: var(--surface-soft);
+  color: var(--ink);
+  font-weight: 850;
+}
+
+.admin-empty {
+  margin: 0;
+  padding: 14px;
+  text-align: left;
+}
+
+.status-pill {
+  width: fit-content;
+  padding: 6px 9px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.status-pill.good {
+  background: #e7f6ed;
+  color: #17683a;
+}
+
+.status-pill.bad {
+  background: #fff1ed;
+  color: #a33b25;
+}
+
+.status-pill.warn {
+  background: #fff4da;
+  color: #775000;
+}
+
+.status-pill.soft {
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+
+.admin-recommendations {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-recommendations article {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.admin-recommendations strong,
+.admin-recommendations span {
+  display: inline-block;
+  margin-right: 10px;
+}
+
+.admin-recommendations p {
+  margin: 8px 0 0;
+  text-align: left;
+}
+
+.onboarding-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.onboarding-panel h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.onboarding-list {
+  display: grid;
+  gap: 8px;
+}
+
+.onboarding-list span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.onboarding-list span::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 2px solid var(--line);
+  background: var(--surface);
+}
+
+.onboarding-list span.done {
+  color: #17683a;
+}
+
+.onboarding-list span.done::before {
+  border-color: var(--green);
+  background: var(--green);
+}
+
+.field-hint {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
 @media (max-width: 1180px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -731,8 +976,20 @@ legend {
   .weather-metrics,
   .hourly-strip,
   .activity-list,
-  .check-grid {
+  .check-grid,
+  .admin-stats,
+  .admin-stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-controls,
+  .admin-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-row {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -746,6 +1003,11 @@ legend {
   }
 
   .segmented {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-stats,
+  .admin-stats-grid {
     grid-template-columns: 1fr;
   }
 }
