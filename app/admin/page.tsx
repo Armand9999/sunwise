@@ -31,6 +31,21 @@ type AdminData = {
     recommendation_id: string | null;
     created_at: string;
   }>;
+  runs: Array<{
+    id: string;
+    trigger_source: string;
+    status: string;
+    window_minutes: number;
+    checked: number;
+    due: number;
+    sent: number;
+    dry_run: number;
+    skipped: number;
+    failed: number;
+    error: string | null;
+    started_at: string;
+    finished_at: string | null;
+  }>;
   recommendations: Array<{
     id: string;
     user_id: string;
@@ -238,6 +253,34 @@ export default function AdminPage() {
                     <span>{user.location}</span>
                     <span>{user.phone_e164}</span>
                     <span>{user.localTime}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+
+          <section className="admin-panel">
+            <h2>Recent digest runs</h2>
+            <div className="admin-table">
+              <div className="admin-row digest-run head">
+                <span>Started</span>
+                <span>Trigger</span>
+                <span>Status</span>
+                <span>Totals</span>
+                <span>Error</span>
+              </div>
+              {data.runs.length === 0 ? (
+                <p className="admin-empty">No digest runs logged yet.</p>
+              ) : (
+                data.runs.map((run) => (
+                  <div className="admin-row digest-run" key={run.id}>
+                    <span>{new Date(run.started_at).toLocaleString()}</span>
+                    <span>{run.trigger_source}</span>
+                    <span className={`status-pill ${statusClass(run.status)}`}>{run.status}</span>
+                    <span>
+                      {run.checked} checked, {run.due} due, {run.sent} sent, {run.failed} failed
+                    </span>
+                    <span>{run.error || "none"}</span>
                   </div>
                 ))
               )}

@@ -31,9 +31,11 @@ async function runDigestRequest(request: Request) {
     const queryWindowMinutes = Number(url.searchParams.get("windowMinutes")) || undefined;
     const limit = body.limit ?? queryLimit;
     const windowMinutes = body.windowMinutes ?? queryWindowMinutes;
+    const triggerSource = request.headers.get("x-vercel-cron-schedule") ? "cron" : "api";
     const result = await runDailyDigestDelivery(supabase, {
       limit,
-      windowMinutes
+      windowMinutes,
+      triggerSource
     });
 
     return NextResponse.json(result);

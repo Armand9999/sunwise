@@ -35,6 +35,7 @@ type SmsResult = {
 };
 
 export type DailyDigestRunResult = {
+  runId?: string;
   checked: number;
   due: number;
   sent: number;
@@ -176,7 +177,7 @@ async function insertRecommendation(
 
 export async function runDailyDigestDelivery(
   supabase: SupabaseClient,
-  options: { now?: Date; windowMinutes?: number; limit?: number } = {}
+  options: { now?: Date; windowMinutes?: number; limit?: number; triggerSource?: "cron" | "manual" | "admin" | "api" } = {}
 ): Promise<DailyDigestRunResult> {
   const now = options.now ?? new Date();
   const windowMinutes = options.windowMinutes ?? 15;
@@ -190,106 +191,162 @@ export async function runDailyDigestDelivery(
     failed: 0,
     results: []
   };
+  let runId: string | undefined;
 
-  const { data: profiles, error: profileError } = await supabase
-    .from("profiles")
-    .select("id, display_name, location, phone_e164, sms_enabled, daily_send_time, timezone")
-    .eq("sms_enabled", true)
-    .not("phone_e164", "is", null)
-    .limit(limit);
-
-  if (profileError) {
-    throw new Error(profileError.message);
-  }
-
-  summary.checked = profiles?.length ?? 0;
-
-  for (const profile of (profiles ?? []) as ProfileRow[]) {
-    if (!isProfileDue(profile, now, windowMinutes)) {
-      continue;
-    }
-
-    summary.due += 1;
-    const deliveryDate = localDateTimeParts(now, profile.timezone).date;
-    const pendingDelivery = await supabase
-      .from("daily_digest_deliveries")
+  try {
+    const runResponse = await supabase
+      .from("daily_digest_runs")
       .insert({
-        user_id: profile.id,
-        delivery_date: deliveryDate,
-        channel: "sms",
-        status: "pending"
+        trigger_source: options.triggerSource ?? "api",
+        status: "running",
+        window_minutes: windowMinutes,
+        limit_count: limit
       })
       .select("id")
       .single();
 
-    if (pendingDelivery.error) {
-      summary.skipped += 1;
-      summary.results.push({
-        userId: profile.id,
-        deliveryDate,
-        status: "skipped",
-        reason: pendingDelivery.error.message
-      });
-      continue;
+    if (runResponse.error) {
+      throw new Error(runResponse.error.message);
     }
 
-    try {
-      const { data: preference } = await supabase
-        .from("preference_profiles")
-        .select("hobbies, intensity, venue, heat_sensitive, sun_sensitive, budget, accessibility, outfit_style")
-        .eq("user_id", profile.id)
-        .maybeSingle<PreferenceRow>();
-      const preferences = rowsToPreferences(profile, preference);
-      const forecast = await getForecastForLocation(preferences.location, { supabase, date: deliveryDate });
-      const recommendation = await generateRecommendations(preferences, forecast);
-      const recommendationId = await insertRecommendation(supabase, profile.id, deliveryDate, recommendation);
-      const smsResult = await sendSms(profile.phone_e164!, recommendation.smsCopy);
+    runId = runResponse.data.id as string;
+    summary.runId = runId;
 
-      await supabase
-        .from("daily_digest_deliveries")
-        .update({
-          recommendation_id: recommendationId,
-          status: smsResult.status,
-          provider: smsResult.provider,
-          provider_message_id: smsResult.providerMessageId ?? null,
-          error: smsResult.error ?? null,
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", pendingDelivery.data.id);
+    const { data: profiles, error: profileError } = await supabase
+      .from("profiles")
+      .select("id, display_name, location, phone_e164, sms_enabled, daily_send_time, timezone")
+      .eq("sms_enabled", true)
+      .not("phone_e164", "is", null)
+      .limit(limit);
 
-      if (smsResult.status === "sent") {
-        summary.sent += 1;
-      } else if (smsResult.status === "dry_run") {
-        summary.dryRun += 1;
-      } else {
-        summary.failed += 1;
+    if (profileError) {
+      throw new Error(profileError.message);
+    }
+
+    summary.checked = profiles?.length ?? 0;
+
+    for (const profile of (profiles ?? []) as ProfileRow[]) {
+      if (!isProfileDue(profile, now, windowMinutes)) {
+        continue;
       }
 
-      summary.results.push({
-        userId: profile.id,
-        deliveryDate,
-        status: smsResult.status,
-        reason: smsResult.error
-      });
-    } catch (error) {
-      summary.failed += 1;
-      const message = error instanceof Error ? error.message : "Unknown delivery error";
-      await supabase
+      summary.due += 1;
+      const deliveryDate = localDateTimeParts(now, profile.timezone).date;
+      const pendingDelivery = await supabase
         .from("daily_digest_deliveries")
+        .insert({
+          user_id: profile.id,
+          delivery_date: deliveryDate,
+          channel: "sms",
+          status: "pending"
+        })
+        .select("id")
+        .single();
+
+      if (pendingDelivery.error) {
+        summary.skipped += 1;
+        summary.results.push({
+          userId: profile.id,
+          deliveryDate,
+          status: "skipped",
+          reason: pendingDelivery.error.message
+        });
+        continue;
+      }
+
+      try {
+        const { data: preference } = await supabase
+          .from("preference_profiles")
+          .select("hobbies, intensity, venue, heat_sensitive, sun_sensitive, budget, accessibility, outfit_style")
+          .eq("user_id", profile.id)
+          .maybeSingle<PreferenceRow>();
+        const preferences = rowsToPreferences(profile, preference);
+        const forecast = await getForecastForLocation(preferences.location, { supabase, date: deliveryDate });
+        const recommendation = await generateRecommendations(preferences, forecast);
+        const recommendationId = await insertRecommendation(supabase, profile.id, deliveryDate, recommendation);
+        const smsResult = await sendSms(profile.phone_e164!, recommendation.smsCopy);
+
+        await supabase
+          .from("daily_digest_deliveries")
+          .update({
+            recommendation_id: recommendationId,
+            status: smsResult.status,
+            provider: smsResult.provider,
+            provider_message_id: smsResult.providerMessageId ?? null,
+            error: smsResult.error ?? null,
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", pendingDelivery.data.id);
+
+        if (smsResult.status === "sent") {
+          summary.sent += 1;
+        } else if (smsResult.status === "dry_run") {
+          summary.dryRun += 1;
+        } else {
+          summary.failed += 1;
+        }
+
+        summary.results.push({
+          userId: profile.id,
+          deliveryDate,
+          status: smsResult.status,
+          reason: smsResult.error
+        });
+      } catch (error) {
+        summary.failed += 1;
+        const message = error instanceof Error ? error.message : "Unknown delivery error";
+        await supabase
+          .from("daily_digest_deliveries")
+          .update({
+            status: "failed",
+            error: message,
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", pendingDelivery.data.id);
+        summary.results.push({
+          userId: profile.id,
+          deliveryDate,
+          status: "failed",
+          reason: message
+        });
+      }
+    }
+
+    await supabase
+      .from("daily_digest_runs")
+      .update({
+        status: "completed",
+        checked: summary.checked,
+        due: summary.due,
+        sent: summary.sent,
+        dry_run: summary.dryRun,
+        skipped: summary.skipped,
+        failed: summary.failed,
+        finished_at: new Date().toISOString()
+      })
+      .eq("id", runId);
+
+    return summary;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Daily digest delivery failed";
+
+    if (runId) {
+      await supabase
+        .from("daily_digest_runs")
         .update({
           status: "failed",
+          checked: summary.checked,
+          due: summary.due,
+          sent: summary.sent,
+          dry_run: summary.dryRun,
+          skipped: summary.skipped,
+          failed: summary.failed,
           error: message,
-          updated_at: new Date().toISOString()
+          finished_at: new Date().toISOString()
         })
-        .eq("id", pendingDelivery.data.id);
-      summary.results.push({
-        userId: profile.id,
-        deliveryDate,
-        status: "failed",
-        reason: message
-      });
+        .eq("id", runId);
     }
-  }
 
-  return summary;
+    throw error;
+  }
 }

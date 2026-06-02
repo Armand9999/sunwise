@@ -13,6 +13,22 @@ type ProfileRow = {
   created_at: string;
 };
 
+type DigestRunRow = {
+  id: string;
+  trigger_source: string;
+  status: string;
+  window_minutes: number;
+  checked: number;
+  due: number;
+  sent: number;
+  dry_run: number;
+  skipped: number;
+  failed: number;
+  error: string | null;
+  started_at: string;
+  finished_at: string | null;
+};
+
 function isAuthorized(request: Request) {
   const secret = process.env.ADMIN_SECRET || process.env.CRON_SECRET;
   const authorization = request.headers.get("authorization");
@@ -77,7 +93,7 @@ async function getAdminDigestStatus(request: Request) {
   const windowMinutes = Number(url.searchParams.get("windowMinutes")) || 15;
   const now = new Date();
 
-  const [profilesResponse, deliveriesResponse, recommendationsResponse] = await Promise.all([
+  const [profilesResponse, deliveriesResponse, recommendationsResponse, runsResponse] = await Promise.all([
     supabase
       .from("profiles")
       .select("id, display_name, location, phone_e164, sms_enabled, daily_send_time, timezone, created_at")
@@ -92,16 +108,22 @@ async function getAdminDigestStatus(request: Request) {
       .from("daily_recommendations")
       .select("id, user_id, recommendation_date, source, sms_copy, created_at")
       .order("created_at", { ascending: false })
+      .limit(10),
+    supabase
+      .from("daily_digest_runs")
+      .select("id, trigger_source, status, window_minutes, checked, due, sent, dry_run, skipped, failed, error, started_at, finished_at")
+      .order("started_at", { ascending: false })
       .limit(10)
   ]);
 
-  if (profilesResponse.error || deliveriesResponse.error || recommendationsResponse.error) {
+  if (profilesResponse.error || deliveriesResponse.error || recommendationsResponse.error || runsResponse.error) {
     return NextResponse.json(
       {
         error:
           profilesResponse.error?.message ||
           deliveriesResponse.error?.message ||
           recommendationsResponse.error?.message ||
+          runsResponse.error?.message ||
           "Could not load admin status"
       },
       { status: 500 }
@@ -127,6 +149,7 @@ async function getAdminDigestStatus(request: Request) {
     },
     dueUsers: profiles.filter((profile) => profile.due),
     users: profiles,
+    runs: (runsResponse.data ?? []) as DigestRunRow[],
     deliveries,
     recommendations: recommendationsResponse.data ?? []
   });
@@ -154,7 +177,8 @@ export async function POST(request: Request) {
     const body = (await request.json().catch(() => ({}))) as { limit?: number; windowMinutes?: number };
     const result = await runDailyDigestDelivery(supabase, {
       limit: body.limit ?? 25,
-      windowMinutes: body.windowMinutes ?? 15
+      windowMinutes: body.windowMinutes ?? 15,
+      triggerSource: "admin"
     });
     return NextResponse.json(result);
   } catch (error) {
