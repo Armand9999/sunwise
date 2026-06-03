@@ -11,6 +11,7 @@ type ProfileRow = {
   sms_verified_at: string | null;
   sms_verified_phone_e164: string | null;
   sms_consent_at: string | null;
+  sms_opted_out_at: string | null;
   daily_send_time: string;
   timezone: string;
   created_at: string;
@@ -30,6 +31,16 @@ type DigestRunRow = {
   error: string | null;
   started_at: string;
   finished_at: string | null;
+};
+
+type InboundMessageRow = {
+  id: string;
+  from_phone_e164: string;
+  action: string;
+  keyword: string | null;
+  body: string;
+  response_body: string | null;
+  created_at: string;
 };
 
 function isAuthorized(request: Request) {
@@ -80,7 +91,8 @@ function profileStatus(profile: ProfileRow, now: Date, windowMinutes: number) {
     Boolean(profile.phone_e164) &&
     profile.sms_verified_phone_e164 === profile.phone_e164 &&
     Boolean(profile.sms_verified_at) &&
-    Boolean(profile.sms_consent_at);
+    Boolean(profile.sms_consent_at) &&
+    !profile.sms_opted_out_at;
   const due = profile.sms_enabled && verified && delta >= 0 && delta < windowMinutes;
   return {
     ...profile,
@@ -102,10 +114,10 @@ async function getAdminDigestStatus(request: Request) {
   const windowMinutes = Number(url.searchParams.get("windowMinutes")) || 15;
   const now = new Date();
 
-  const [profilesResponse, deliveriesResponse, recommendationsResponse, runsResponse] = await Promise.all([
+  const [profilesResponse, deliveriesResponse, recommendationsResponse, runsResponse, inboundResponse] = await Promise.all([
     supabase
       .from("profiles")
-      .select("id, display_name, location, phone_e164, sms_enabled, sms_verified_at, sms_verified_phone_e164, sms_consent_at, daily_send_time, timezone, created_at")
+      .select("id, display_name, location, phone_e164, sms_enabled, sms_verified_at, sms_verified_phone_e164, sms_consent_at, sms_opted_out_at, daily_send_time, timezone, created_at")
       .order("created_at", { ascending: false })
       .limit(50),
     supabase
@@ -122,10 +134,15 @@ async function getAdminDigestStatus(request: Request) {
       .from("daily_digest_runs")
       .select("id, trigger_source, status, window_minutes, checked, due, sent, dry_run, skipped, failed, error, started_at, finished_at")
       .order("started_at", { ascending: false })
+      .limit(10),
+    supabase
+      .from("sms_inbound_messages")
+      .select("id, from_phone_e164, action, keyword, body, response_body, created_at")
+      .order("created_at", { ascending: false })
       .limit(10)
   ]);
 
-  if (profilesResponse.error || deliveriesResponse.error || recommendationsResponse.error || runsResponse.error) {
+  if (profilesResponse.error || deliveriesResponse.error || recommendationsResponse.error || runsResponse.error || inboundResponse.error) {
     return NextResponse.json(
       {
         error:
@@ -133,6 +150,7 @@ async function getAdminDigestStatus(request: Request) {
           deliveriesResponse.error?.message ||
           recommendationsResponse.error?.message ||
           runsResponse.error?.message ||
+          inboundResponse.error?.message ||
           "Could not load admin status"
       },
       { status: 500 }
@@ -153,6 +171,7 @@ async function getAdminDigestStatus(request: Request) {
       users: profiles.length,
       smsEnabled: profiles.filter((profile) => profile.sms_enabled).length,
       smsVerified: profiles.filter((profile) => profile.verified).length,
+      smsOptedOut: profiles.filter((profile) => Boolean(profile.sms_opted_out_at)).length,
       due: profiles.filter((profile) => profile.due).length,
       recentSent: sent,
       recentFailed: failed
@@ -160,6 +179,10 @@ async function getAdminDigestStatus(request: Request) {
     dueUsers: profiles.filter((profile) => profile.due),
     users: profiles,
     runs: (runsResponse.data ?? []) as DigestRunRow[],
+    inboundMessages: (inboundResponse.data ?? []).map((message) => ({
+      ...message,
+      from_phone_e164: maskPhone(message.from_phone_e164)
+    })) as InboundMessageRow[],
     deliveries,
     recommendations: recommendationsResponse.data ?? []
   });

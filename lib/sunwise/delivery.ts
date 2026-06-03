@@ -14,6 +14,7 @@ type ProfileRow = {
   sms_verified_at: string | null;
   sms_verified_phone_e164: string | null;
   sms_consent_at: string | null;
+  sms_opted_out_at: string | null;
   daily_send_time: string;
   timezone: string;
 };
@@ -79,7 +80,8 @@ function isProfileDue(profile: ProfileRow, now: Date, windowMinutes: number) {
     !profile.phone_e164 ||
     profile.sms_verified_phone_e164 !== profile.phone_e164 ||
     !profile.sms_verified_at ||
-    !profile.sms_consent_at
+    !profile.sms_consent_at ||
+    profile.sms_opted_out_at
   ) {
     return false;
   }
@@ -173,11 +175,12 @@ export async function runDailyDigestDelivery(
 
     const { data: profiles, error: profileError } = await supabase
       .from("profiles")
-      .select("id, display_name, location, phone_e164, sms_enabled, sms_verified_at, sms_verified_phone_e164, sms_consent_at, daily_send_time, timezone")
+      .select("id, display_name, location, phone_e164, sms_enabled, sms_verified_at, sms_verified_phone_e164, sms_consent_at, sms_opted_out_at, daily_send_time, timezone")
       .eq("sms_enabled", true)
       .not("phone_e164", "is", null)
       .not("sms_verified_at", "is", null)
       .not("sms_consent_at", "is", null)
+      .is("sms_opted_out_at", null)
       .limit(limit);
 
     if (profileError) {

@@ -1,3 +1,5 @@
+import { createHmac, timingSafeEqual } from "crypto";
+
 export type SmsResult = {
   status: "sent" | "dry_run" | "failed";
   provider: "twilio" | "dry_run";
@@ -7,6 +9,37 @@ export type SmsResult = {
 
 export function smsCredentialsConfigured() {
   return Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM_PHONE);
+}
+
+function constantTimeEqual(left: string, right: string) {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+export function validateTwilioSignature(url: string, params: URLSearchParams, signature: string | null) {
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  if (!authToken || !signature) {
+    return false;
+  }
+
+  const sorted = Array.from(params.entries()).sort(([left], [right]) => left.localeCompare(right));
+  const payload = sorted.reduce((value, [key, paramValue]) => `${value}${key}${paramValue}`, url);
+  const expected = createHmac("sha1", authToken).update(payload).digest("base64");
+
+  return constantTimeEqual(expected, signature);
+}
+
+export function twiml(message: string) {
+  const escaped = message
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+
+  return `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escaped}</Message></Response>`;
 }
 
 export async function sendSms(to: string, body: string): Promise<SmsResult> {

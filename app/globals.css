@@ -847,6 +847,10 @@ legend {
   grid-template-columns: 1.15fr 0.75fr 0.85fr 1.6fr 1.2fr;
 }
 
+.admin-row.inbound-message {
+  grid-template-columns: 1.1fr 0.8fr 0.75fr 1.2fr 1.6fr;
+}
+
 .admin-empty {
   margin: 0;
   padding: 14px;
@@ -1036,6 +1040,10 @@ legend {
   }
 
   .admin-row.digest-run {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-row.inbound-message {
     grid-template-columns: 1fr;
   }
 }

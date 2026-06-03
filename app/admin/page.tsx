@@ -9,6 +9,7 @@ type AdminData = {
     users: number;
     smsEnabled: number;
     smsVerified: number;
+    smsOptedOut: number;
     due: number;
     recentSent: number;
     recentFailed: number;
@@ -54,6 +55,15 @@ type AdminData = {
     recommendation_date: string;
     source: string;
     sms_copy: string;
+    created_at: string;
+  }>;
+  inboundMessages: Array<{
+    id: string;
+    from_phone_e164: string;
+    action: string;
+    keyword: string | null;
+    body: string;
+    response_body: string | null;
     created_at: string;
   }>;
 };
@@ -229,6 +239,10 @@ export default function AdminPage() {
               <strong>{data.summary.smsVerified}</strong>
             </div>
             <div>
+              <span>Opted out</span>
+              <strong>{data.summary.smsOptedOut}</strong>
+            </div>
+            <div>
               <span>Due now</span>
               <strong>{data.summary.due}</strong>
             </div>
@@ -310,6 +324,34 @@ export default function AdminPage() {
                   <span>{delivery.error || "none"}</span>
                 </div>
               ))}
+            </div>
+          </section>
+
+          <section className="admin-panel">
+            <h2>Recent inbound SMS</h2>
+            <div className="admin-table">
+              <div className="admin-row inbound-message head">
+                <span>Received</span>
+                <span>From</span>
+                <span>Action</span>
+                <span>Body</span>
+                <span>Response</span>
+              </div>
+              {data.inboundMessages.length === 0 ? (
+                <p className="admin-empty">No inbound SMS messages logged yet.</p>
+              ) : (
+                data.inboundMessages.map((message) => (
+                  <div className="admin-row inbound-message" key={message.id}>
+                    <span>{new Date(message.created_at).toLocaleString()}</span>
+                    <span>{message.from_phone_e164}</span>
+                    <span className={`status-pill ${message.action === "stop" ? "bad" : message.action === "help" ? "warn" : "soft"}`}>
+                      {message.action}
+                    </span>
+                    <span>{message.body || "none"}</span>
+                    <span>{message.response_body || "none"}</span>
+                  </div>
+                ))
+              )}
             </div>
           </section>
 
