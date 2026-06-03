@@ -38,6 +38,37 @@ type RecommendationRow = {
   source: RecommendationResult["source"];
 };
 
+type SmsStatus = {
+  phone: string | null;
+  enabled: boolean;
+  verified: boolean;
+  consented: boolean;
+  optedOut: boolean;
+  smsVerifiedAt: string | null;
+  smsConsentAt: string | null;
+  smsOptedOutAt: string | null;
+  nextSend: { date: string; time: string; timezone: string } | null;
+  eligible: boolean;
+  latestDelivery: {
+    delivery_date: string;
+    status: string;
+    provider: string | null;
+    error: string | null;
+    created_at: string;
+    updated_at: string;
+  } | null;
+  latestRun: {
+    trigger_source: string;
+    status: string;
+    checked: number;
+    due: number;
+    sent: number;
+    failed: number;
+    started_at: string;
+    finished_at: string | null;
+  } | null;
+};
+
 function formatSendTime(time: string) {
   const [hour, minute] = time.split(":").map(Number);
   const suffix = hour >= 12 ? "PM" : "AM";
@@ -59,6 +90,23 @@ function isValidE164(value: string) {
 
 const SMS_CONSENT_TEXT =
   "I agree to receive recurring automated daily Sunwise weather and activity text messages. Message and data rates may apply. Reply STOP to opt out.";
+
+function smsStatusTone(status?: string | null) {
+  if (status === "sent" || status === "completed") {
+    return "good";
+  }
+  if (status === "failed") {
+    return "bad";
+  }
+  if (status === "skipped" || status === "dry_run") {
+    return "warn";
+  }
+  return "soft";
+}
+
+function formatStatusDate(value?: string | null) {
+  return value ? new Date(value).toLocaleString() : "Not yet";
+}
 
 function dbRowsToPreferences(profile: ProfileRow | null, preference: PreferenceRow | null): Preferences {
   return {
@@ -126,6 +174,9 @@ export default function Home() {
   const [recommendationResult, setRecommendationResult] = useState<RecommendationResult | null>(null);
   const [generationError, setGenerationError] = useState("");
   const [lastSavedPlanAt, setLastSavedPlanAt] = useState("");
+  const [smsStatus, setSmsStatus] = useState<SmsStatus | null>(null);
+  const [isSmsStatusLoading, setIsSmsStatusLoading] = useState(false);
+  const [smsStatusMessage, setSmsStatusMessage] = useState("");
 
   const loadProfile = useCallback(
     async (user: User) => {
@@ -315,6 +366,64 @@ export default function Home() {
     const { data } = await supabase.auth.getSession();
     const token = data.session?.access_token;
     return token ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } : null;
+  };
+
+  const refreshSmsStatus = useCallback(async () => {
+    if (!session?.user) {
+      setSmsStatus(null);
+      return;
+    }
+
+    const headers = await authHeader();
+    if (!headers) {
+      return;
+    }
+
+    setIsSmsStatusLoading(true);
+    setSmsStatusMessage("");
+
+    try {
+      const response = await fetch("/api/sms-status", { headers });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not load text status.");
+      }
+      setSmsStatus(payload as SmsStatus);
+    } catch (error) {
+      setSmsStatusMessage(error instanceof Error ? error.message : "Could not load text status.");
+    } finally {
+      setIsSmsStatusLoading(false);
+    }
+  }, [session?.user, supabase]);
+
+  useEffect(() => {
+    void refreshSmsStatus();
+  }, [refreshSmsStatus]);
+
+  const pauseDailyTexts = async () => {
+    if (!supabase || !session?.user) {
+      setSmsStatusMessage("Sign in before pausing daily texts.");
+      return;
+    }
+
+    setIsSmsStatusLoading(true);
+    setSmsStatusMessage("");
+
+    const response = await supabase
+      .from("profiles")
+      .update({ sms_enabled: false })
+      .eq("id", session.user.id);
+
+    setIsSmsStatusLoading(false);
+
+    if (response.error) {
+      setSmsStatusMessage(response.error.message);
+      return;
+    }
+
+    setPreferences({ ...preferences, smsEnabled: false });
+    setSmsStatusMessage("Daily texts paused.");
+    await refreshSmsStatus();
   };
 
   const requestSmsCode = async () => {
@@ -816,6 +925,67 @@ export default function Home() {
                 </button>
               </div>
               {verificationMessage && <p className="notice-text">{verificationMessage}</p>}
+            </section>
+
+            <section className="sms-status-panel" aria-label="Daily text status">
+              <div className="panel-top">
+                <div>
+                  <p className="muted">Text status</p>
+                  <h2>{smsStatus?.eligible ? "Ready for delivery" : preferences.smsEnabled ? "Needs attention" : "Paused"}</h2>
+                </div>
+                <span className={`status-pill ${smsStatus?.eligible ? "good" : smsStatus?.optedOut ? "bad" : "soft"}`}>
+                  {smsStatus?.optedOut ? "Opted out" : smsStatus?.enabled ? "On" : "Off"}
+                </span>
+              </div>
+              <div className="sms-status-grid">
+                <div>
+                  <span>Phone</span>
+                  <strong>{smsStatus?.phone || phoneNumber || "Not set"}</strong>
+                </div>
+                <div>
+                  <span>Verified</span>
+                  <strong>{smsStatus?.verified ? "Yes" : "No"}</strong>
+                </div>
+                <div>
+                  <span>Consent</span>
+                  <strong>{smsStatus?.consented ? "Recorded" : "Missing"}</strong>
+                </div>
+                <div>
+                  <span>Next send</span>
+                  <strong>
+                    {smsStatus?.nextSend ? `${smsStatus.nextSend.date} at ${formatSendTime(smsStatus.nextSend.time)}` : "Not scheduled"}
+                  </strong>
+                </div>
+              </div>
+              <div className="sms-status-list">
+                <div>
+                  <span>Last SMS</span>
+                  <strong className={`status-pill ${smsStatusTone(smsStatus?.latestDelivery?.status)}`}>
+                    {smsStatus?.latestDelivery?.status || "none"}
+                  </strong>
+                  <small>{formatStatusDate(smsStatus?.latestDelivery?.updated_at)}</small>
+                </div>
+                <div>
+                  <span>Last digest run</span>
+                  <strong className={`status-pill ${smsStatusTone(smsStatus?.latestRun?.status)}`}>
+                    {smsStatus?.latestRun?.status || "none"}
+                  </strong>
+                  <small>
+                    {smsStatus?.latestRun
+                      ? `${formatStatusDate(smsStatus.latestRun.started_at)}: ${smsStatus.latestRun.sent} sent, ${smsStatus.latestRun.failed} failed`
+                      : "Not yet"}
+                  </small>
+                </div>
+              </div>
+              <div className="sms-status-actions">
+                <button className="secondary-button" type="button" onClick={refreshSmsStatus} disabled={!session || isSmsStatusLoading}>
+                  {isSmsStatusLoading ? "Refreshing..." : "Refresh status"}
+                </button>
+                <button className="secondary-button" type="button" onClick={pauseDailyTexts} disabled={!session || !smsStatus?.enabled || isSmsStatusLoading}>
+                  Pause texts
+                </button>
+              </div>
+              {smsStatusMessage && <p className="notice-text">{smsStatusMessage}</p>}
             </section>
 
             <label className="field">
