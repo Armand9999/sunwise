@@ -118,6 +118,7 @@ async function insertRecommendation(
     .from("daily_recommendations")
     .insert({
       user_id: userId,
+      forecast_id: result.forecast.forecastId ?? null,
       recommendation_date: deliveryDate,
       source: result.source,
       model: result.source === "openai" ? process.env.OPENAI_RECOMMENDATION_MODEL || null : null,

@@ -32,7 +32,10 @@ export type Activity = {
 };
 
 export type Forecast = {
+  forecastId?: string;
   location: string;
+  provider?: string;
+  forecastDate?: string;
   summary: string;
   temperatureC: number;
   feelsLikeC: number;
@@ -42,6 +45,11 @@ export type Forecast = {
   humidity: number;
   heatRisk: "low" | "moderate" | "high";
   bestWindow: string;
+  hourly?: Array<{
+    time: string;
+    temp: number;
+    icon: "sun" | "cloud" | "rain";
+  }>;
 };
 
 export type RankedActivity = Activity & {

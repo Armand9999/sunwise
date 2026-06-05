@@ -267,8 +267,15 @@ export default function Home() {
   );
   const rankedActivities = recommendationResult?.recommendations ?? localActivities;
   const topActivity = rankedActivities[selected] ?? rankedActivities[0];
-  const outfit = recommendationResult?.outfit ?? outfitFor(preferences, { ...defaultForecast, location: preferences.location });
+  const displayForecast = recommendationResult?.forecast ?? { ...defaultForecast, location: preferences.location };
+  const displayHourly = displayForecast.hourly ?? hourly ?? [];
+  const outfit = recommendationResult?.outfit ?? outfitFor(preferences, displayForecast);
   const smsCopy = recommendationResult?.smsCopy;
+  const todayLabel = new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric"
+  }).format(new Date());
   const phoneFormatReady = isValidE164(phoneNumber);
   const phoneVerified = phoneFormatReady && verifiedPhone === phoneNumber && Boolean(smsVerifiedAt);
   const smsConsentReady = phoneVerified && Boolean(smsConsentAt) && smsConsentAccepted;
@@ -576,6 +583,7 @@ export default function Home() {
       user_id: session.user.id,
       recommendation_date: new Date().toISOString().slice(0, 10),
       source: result.source,
+      forecast_id: result.forecast.forecastId ?? null,
       model: result.source === "openai" ? "configured-openai-model" : null,
       recommendations: result.recommendations,
       outfit: result.outfit,
@@ -643,8 +651,8 @@ export default function Home() {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <p className="muted">Tuesday, June 2</p>
-            <h1>Today in {preferences.location}</h1>
+            <p className="muted">{todayLabel}</p>
+            <h1>Today in {displayForecast.location}</h1>
           </div>
           <div className="location-control">
             <span aria-hidden="true">+</span>
@@ -661,30 +669,34 @@ export default function Home() {
             <div className="weather-panel">
               <div className="weather-hero">
                 <div>
-                  <p className="muted">{defaultForecast.summary}</p>
+                  <p className="muted">
+                    {displayForecast.provider === "open-meteo" ? "Live Open-Meteo forecast" : "Preview forecast"}
+                  </p>
                   <div className="temp-row">
-                    <span>{defaultForecast.temperatureC}C</span>
+                    <span>{displayForecast.temperatureC}C</span>
                     <Icon name="sun" />
                   </div>
-                  <p>Feels like {defaultForecast.feelsLikeC}. Best window: {defaultForecast.bestWindow}.</p>
+                  <p>
+                    {displayForecast.summary}. Feels like {displayForecast.feelsLikeC}. Best window: {displayForecast.bestWindow}.
+                  </p>
                 </div>
                 <div className="weather-metrics">
                   <div>
-                    <strong>UV {defaultForecast.uvIndex}</strong>
-                    <span>High</span>
+                    <strong>UV {displayForecast.uvIndex}</strong>
+                    <span>{displayForecast.uvIndex >= 7 ? "High" : displayForecast.uvIndex >= 4 ? "Moderate" : "Low"}</span>
                   </div>
                   <div>
-                    <strong>Rain {defaultForecast.rainChance}%</strong>
-                    <span>Late day</span>
+                    <strong>Rain {displayForecast.rainChance}%</strong>
+                    <span>{displayForecast.rainChance >= 50 ? "Likely" : "Chance"}</span>
                   </div>
                   <div>
-                    <strong>{defaultForecast.windKph} km/h</strong>
-                    <span>West wind</span>
+                    <strong>{displayForecast.windKph} km/h</strong>
+                    <span>Max wind</span>
                   </div>
                 </div>
               </div>
               <div className="hourly-strip" aria-label="Hourly forecast">
-                {hourly.map((hour) => (
+                {displayHourly.map((hour) => (
                   <div className="hour-cell" key={hour.time}>
                     <span>{hour.time}</span>
                     <Icon name={hour.icon} />

@@ -102,6 +102,16 @@ function bestOutdoorWindow(data: OpenMeteoForecast) {
   return `${formatHour(start)} - ${formatHour(end)}`;
 }
 
+function iconForWeather(code: number | undefined, rainChance: number): "sun" | "cloud" | "rain" {
+  if (rainChance >= 45 || (code && code >= 51)) {
+    return "rain";
+  }
+  if (code === 0 || code === 1) {
+    return "sun";
+  }
+  return "cloud";
+}
+
 function formatHour(hour: number) {
   const suffix = hour >= 12 ? "PM" : "AM";
   const displayHour = hour % 12 || 12;
@@ -124,7 +134,30 @@ async function geocodeLocation(location: string): Promise<GeocodeResult | null> 
   return data.results?.[0] ?? null;
 }
 
-function forecastFromOpenMeteo(location: string, data: OpenMeteoForecast): Forecast {
+function hourlyDisplay(data: OpenMeteoForecast) {
+  const times = data.hourly?.time ?? [];
+  const temperatures = data.hourly?.temperature_2m ?? [];
+  const rain = data.hourly?.precipitation_probability ?? [];
+  const code = data.daily?.weather_code?.[0];
+  const preferredHours = new Set([8, 10, 12, 14, 16, 18]);
+  const cells = times
+    .map((time, index) => {
+      const hour = Number(time.slice(11, 13));
+      if (!preferredHours.has(hour)) {
+        return null;
+      }
+      return {
+        time: formatHour(hour).replace(":00", ""),
+        temp: toNumber(temperatures[index], defaultForecast.temperatureC),
+        icon: iconForWeather(code, rain[index] ?? 0)
+      };
+    })
+    .filter((cell): cell is { time: string; temp: number; icon: "sun" | "cloud" | "rain" } => Boolean(cell));
+
+  return cells.length ? cells : defaultForecast.hourly;
+}
+
+function forecastFromOpenMeteo(location: string, data: OpenMeteoForecast, forecastDate?: string): Forecast {
   const daily = data.daily ?? {};
   const hourly = data.hourly ?? {};
   const temperatureC = toNumber(daily.temperature_2m_max?.[0], defaultForecast.temperatureC);
@@ -137,6 +170,8 @@ function forecastFromOpenMeteo(location: string, data: OpenMeteoForecast): Forec
 
   return {
     location,
+    provider: "open-meteo",
+    forecastDate: forecastDate ?? daily.time?.[0],
     summary: weatherCodeSummaries[weatherCode] ?? "Forecast available",
     temperatureC,
     feelsLikeC,
@@ -145,7 +180,8 @@ function forecastFromOpenMeteo(location: string, data: OpenMeteoForecast): Forec
     windKph,
     humidity,
     heatRisk: heatRisk(feelsLikeC),
-    bestWindow: bestOutdoorWindow(data)
+    bestWindow: bestOutdoorWindow(data),
+    hourly: hourlyDisplay(data)
   };
 }
 
@@ -171,7 +207,7 @@ export async function fetchLiveForecast(location: string): Promise<{ forecast: F
   const payload = (await response.json()) as OpenMeteoForecast;
   const label = [geocode.name, geocode.admin1, geocode.country].filter(Boolean).join(", ");
   return {
-    forecast: forecastFromOpenMeteo(label || location, payload),
+    forecast: forecastFromOpenMeteo(label || location, payload, payload.daily?.time?.[0]),
     payload: { geocode, forecast: payload }
   };
 }
@@ -184,7 +220,7 @@ export async function getForecastForLocation(
   const cached = options.supabase
     ? await options.supabase
         .from("daily_forecasts")
-        .select("payload, summary, temperature_c, feels_like_c, uv_index, rain_chance, wind_kph, humidity, heat_risk, best_window")
+        .select("id, payload, summary, temperature_c, feels_like_c, uv_index, rain_chance, wind_kph, humidity, heat_risk, best_window")
         .eq("location", location)
         .eq("forecast_date", forecastDate)
         .eq("provider", "open-meteo")
@@ -194,6 +230,9 @@ export async function getForecastForLocation(
   if (cached?.data) {
     return {
       location,
+      forecastId: cached.data.id,
+      provider: "open-meteo",
+      forecastDate,
       summary: cached.data.summary,
       temperatureC: Math.round(Number(cached.data.temperature_c)),
       feelsLikeC: Math.round(Number(cached.data.feels_like_c)),
@@ -202,7 +241,8 @@ export async function getForecastForLocation(
       windKph: Math.round(Number(cached.data.wind_kph)),
       humidity: Math.round(Number(cached.data.humidity)),
       heatRisk: cached.data.heat_risk as Forecast["heatRisk"],
-      bestWindow: cached.data.best_window
+      bestWindow: cached.data.best_window,
+      hourly: forecastFromOpenMeteo(location, (cached.data.payload as { forecast?: OpenMeteoForecast }).forecast ?? {}, forecastDate).hourly
     };
   }
 
@@ -212,21 +252,29 @@ export async function getForecastForLocation(
   }
 
   if (options.supabase) {
-    await options.supabase.from("daily_forecasts").upsert({
-      location,
-      forecast_date: forecastDate,
-      provider: "open-meteo",
-      payload: live.payload,
-      summary: live.forecast.summary,
-      temperature_c: live.forecast.temperatureC,
-      feels_like_c: live.forecast.feelsLikeC,
-      uv_index: live.forecast.uvIndex,
-      rain_chance: live.forecast.rainChance,
-      wind_kph: live.forecast.windKph,
-      humidity: live.forecast.humidity,
-      heat_risk: live.forecast.heatRisk,
-      best_window: live.forecast.bestWindow
-    });
+    const upsert = await options.supabase
+      .from("daily_forecasts")
+      .upsert({
+        location,
+        forecast_date: forecastDate,
+        provider: "open-meteo",
+        payload: live.payload,
+        summary: live.forecast.summary,
+        temperature_c: live.forecast.temperatureC,
+        feels_like_c: live.forecast.feelsLikeC,
+        uv_index: live.forecast.uvIndex,
+        rain_chance: live.forecast.rainChance,
+        wind_kph: live.forecast.windKph,
+        humidity: live.forecast.humidity,
+        heat_risk: live.forecast.heatRisk,
+        best_window: live.forecast.bestWindow
+      })
+      .select("id")
+      .single();
+
+    if (!upsert.error) {
+      live.forecast.forecastId = upsert.data.id as string;
+    }
   }
 
   return live.forecast;

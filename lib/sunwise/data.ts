@@ -26,7 +26,15 @@ export const defaultForecast: Forecast = {
   windKph: 18,
   humidity: 62,
   heatRisk: "moderate",
-  bestWindow: "9:30 AM - 12:00 PM"
+  bestWindow: "9:30 AM - 12:00 PM",
+  hourly: [
+    { time: "8 AM", temp: 22, icon: "sun" },
+    { time: "10 AM", temp: 25, icon: "sun" },
+    { time: "12 PM", temp: 27, icon: "cloud" },
+    { time: "2 PM", temp: 29, icon: "sun" },
+    { time: "4 PM", temp: 28, icon: "rain" },
+    { time: "6 PM", temp: 25, icon: "cloud" }
+  ]
 };
 
 export const activities: Activity[] = [
@@ -84,11 +92,4 @@ export const activities: Activity[] = [
   }
 ];
 
-export const hourly = [
-  { time: "8 AM", temp: 22, icon: "sun" },
-  { time: "10 AM", temp: 25, icon: "sun" },
-  { time: "12 PM", temp: 27, icon: "cloud" },
-  { time: "2 PM", temp: 29, icon: "sun" },
-  { time: "4 PM", temp: 28, icon: "rain" },
-  { time: "6 PM", temp: 25, icon: "cloud" }
-];
+export const hourly = defaultForecast.hourly;
