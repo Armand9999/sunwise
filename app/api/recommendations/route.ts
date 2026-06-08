@@ -13,7 +13,11 @@ export async function POST(request: Request) {
       ...body.preferences
     };
     const supabase = createSupabaseServerClient();
-    const forecast = await getForecastForLocation(preferences.location, { supabase });
+    const coordinates =
+      Number.isFinite(preferences.latitude) && Number.isFinite(preferences.longitude)
+        ? { latitude: preferences.latitude!, longitude: preferences.longitude! }
+        : undefined;
+    const forecast = await getForecastForLocation(preferences.location, { supabase, coordinates });
     const result = await generateRecommendations(preferences, forecast);
     return NextResponse.json(result);
   } catch {

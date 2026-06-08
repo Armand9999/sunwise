@@ -149,6 +149,23 @@ button {
   background: var(--surface);
 }
 
+.location-tools {
+  display: grid;
+  grid-template-columns: minmax(210px, 270px) auto;
+  gap: 8px;
+  justify-content: end;
+}
+
+.location-button {
+  padding: 0 14px;
+  white-space: nowrap;
+}
+
+.location-message {
+  grid-column: 1 / -1;
+  text-align: right;
+}
+
 .location-control input,
 .field input[type="email"],
 .field input[type="password"],
@@ -1062,6 +1079,19 @@ legend {
   .section-title {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .location-tools {
+    grid-template-columns: 1fr;
+    justify-content: stretch;
+  }
+
+  .location-control {
+    width: 100%;
+  }
+
+  .location-message {
+    text-align: left;
   }
 
   .digest-card {

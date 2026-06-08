@@ -5,6 +5,10 @@ export type Style = "Breezy" | "Sporty" | "Polished";
 
 export type Preferences = {
   location: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  locationAccuracyM?: number | null;
+  locationSource?: "manual" | "browser";
   smsEnabled: boolean;
   sendTime: string;
   hobbies: Hobby[];

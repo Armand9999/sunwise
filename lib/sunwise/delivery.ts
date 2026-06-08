@@ -9,6 +9,10 @@ type ProfileRow = {
   id: string;
   display_name: string | null;
   location: string;
+  latitude: number | null;
+  longitude: number | null;
+  location_accuracy_m: number | null;
+  location_source: "manual" | "browser";
   phone_e164: string | null;
   sms_enabled: boolean;
   sms_verified_at: string | null;
@@ -95,6 +99,10 @@ function rowsToPreferences(profile: ProfileRow, preference: PreferenceRow | null
   return {
     ...defaultPreferences,
     location: profile.location || defaultPreferences.location,
+    latitude: profile.latitude,
+    longitude: profile.longitude,
+    locationAccuracyM: profile.location_accuracy_m,
+    locationSource: profile.location_source,
     smsEnabled: profile.sms_enabled,
     sendTime: normalizeTime(profile.daily_send_time),
     hobbies: preference?.hobbies?.length ? preference.hobbies : defaultPreferences.hobbies,
@@ -176,7 +184,7 @@ export async function runDailyDigestDelivery(
 
     const { data: profiles, error: profileError } = await supabase
       .from("profiles")
-      .select("id, display_name, location, phone_e164, sms_enabled, sms_verified_at, sms_verified_phone_e164, sms_consent_at, sms_opted_out_at, daily_send_time, timezone")
+      .select("id, display_name, location, latitude, longitude, location_accuracy_m, location_source, phone_e164, sms_enabled, sms_verified_at, sms_verified_phone_e164, sms_consent_at, sms_opted_out_at, daily_send_time, timezone")
       .eq("sms_enabled", true)
       .not("phone_e164", "is", null)
       .not("sms_verified_at", "is", null)
@@ -226,7 +234,15 @@ export async function runDailyDigestDelivery(
           .eq("user_id", profile.id)
           .maybeSingle<PreferenceRow>();
         const preferences = rowsToPreferences(profile, preference);
-        const forecast = await getForecastForLocation(preferences.location, { supabase, date: deliveryDate });
+        const coordinates =
+          Number.isFinite(preferences.latitude) && Number.isFinite(preferences.longitude)
+            ? { latitude: preferences.latitude!, longitude: preferences.longitude! }
+            : undefined;
+        const forecast = await getForecastForLocation(preferences.location, {
+          supabase,
+          date: deliveryDate,
+          coordinates
+        });
         const recommendation = await generateRecommendations(preferences, forecast);
         const recommendationId = await insertRecommendation(supabase, profile.id, deliveryDate, recommendation);
         const smsResult = await sendSms(profile.phone_e164!, recommendation.smsCopy);

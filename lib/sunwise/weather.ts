@@ -185,8 +185,26 @@ function forecastFromOpenMeteo(location: string, data: OpenMeteoForecast, foreca
   };
 }
 
-export async function fetchLiveForecast(location: string): Promise<{ forecast: Forecast; payload: unknown } | null> {
-  const geocode = await geocodeLocation(location);
+type Coordinates = {
+  latitude: number;
+  longitude: number;
+};
+
+function coordinateCacheKey(coordinates: Coordinates) {
+  return `geo:${coordinates.latitude.toFixed(3)},${coordinates.longitude.toFixed(3)}`;
+}
+
+export async function fetchLiveForecast(
+  location: string,
+  coordinates?: Coordinates
+): Promise<{ forecast: Forecast; payload: unknown } | null> {
+  const geocode: GeocodeResult | null = coordinates
+    ? {
+        name: location,
+        latitude: coordinates.latitude,
+        longitude: coordinates.longitude
+      }
+    : await geocodeLocation(location);
   if (!geocode) {
     return null;
   }
@@ -205,7 +223,7 @@ export async function fetchLiveForecast(location: string): Promise<{ forecast: F
   }
 
   const payload = (await response.json()) as OpenMeteoForecast;
-  const label = [geocode.name, geocode.admin1, geocode.country].filter(Boolean).join(", ");
+  const label = coordinates ? location : [geocode.name, geocode.admin1, geocode.country].filter(Boolean).join(", ");
   return {
     forecast: forecastFromOpenMeteo(label || location, payload, payload.daily?.time?.[0]),
     payload: { geocode, forecast: payload }
@@ -214,14 +232,15 @@ export async function fetchLiveForecast(location: string): Promise<{ forecast: F
 
 export async function getForecastForLocation(
   location: string,
-  options: { supabase?: SupabaseClient | null; date?: string } = {}
+  options: { supabase?: SupabaseClient | null; date?: string; coordinates?: Coordinates } = {}
 ) {
   const forecastDate = options.date ?? new Date().toISOString().slice(0, 10);
+  const cacheLocation = options.coordinates ? coordinateCacheKey(options.coordinates) : location;
   const cached = options.supabase
     ? await options.supabase
         .from("daily_forecasts")
         .select("id, payload, summary, temperature_c, feels_like_c, uv_index, rain_chance, wind_kph, humidity, heat_risk, best_window")
-        .eq("location", location)
+        .eq("location", cacheLocation)
         .eq("forecast_date", forecastDate)
         .eq("provider", "open-meteo")
         .maybeSingle()
@@ -246,7 +265,7 @@ export async function getForecastForLocation(
     };
   }
 
-  const live = await fetchLiveForecast(location);
+  const live = await fetchLiveForecast(location, options.coordinates);
   if (!live) {
     return { ...defaultForecast, location };
   }
@@ -255,7 +274,7 @@ export async function getForecastForLocation(
     const upsert = await options.supabase
       .from("daily_forecasts")
       .upsert({
-        location,
+        location: cacheLocation,
         forecast_date: forecastDate,
         provider: "open-meteo",
         payload: live.payload,

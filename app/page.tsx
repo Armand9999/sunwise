@@ -20,6 +20,10 @@ type PreferenceRow = {
 
 type ProfileRow = {
   location: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  location_accuracy_m: number | null;
+  location_source: "manual" | "browser" | null;
   phone_e164: string | null;
   sms_enabled: boolean | null;
   sms_verified_at: string | null;
@@ -112,6 +116,10 @@ function dbRowsToPreferences(profile: ProfileRow | null, preference: PreferenceR
   return {
     ...defaultPreferences,
     location: profile?.location || defaultPreferences.location,
+    latitude: profile?.latitude ?? null,
+    longitude: profile?.longitude ?? null,
+    locationAccuracyM: profile?.location_accuracy_m ?? null,
+    locationSource: profile?.location_source || "manual",
     smsEnabled: profile?.sms_enabled ?? defaultPreferences.smsEnabled,
     sendTime: normalizeTime(profile?.daily_send_time),
     hobbies: preference?.hobbies?.length ? preference.hobbies : defaultPreferences.hobbies,
@@ -177,6 +185,8 @@ export default function Home() {
   const [smsStatus, setSmsStatus] = useState<SmsStatus | null>(null);
   const [isSmsStatusLoading, setIsSmsStatusLoading] = useState(false);
   const [smsStatusMessage, setSmsStatusMessage] = useState("");
+  const [isLocating, setIsLocating] = useState(false);
+  const [locationMessage, setLocationMessage] = useState("");
 
   const loadProfile = useCallback(
     async (user: User) => {
@@ -187,7 +197,7 @@ export default function Home() {
       const [profileResponse, preferenceResponse, recommendationResponse] = await Promise.all([
         supabase
           .from("profiles")
-          .select("location, phone_e164, sms_enabled, sms_verified_at, sms_verified_phone_e164, sms_consent_at, daily_send_time")
+          .select("location, latitude, longitude, location_accuracy_m, location_source, phone_e164, sms_enabled, sms_verified_at, sms_verified_phone_e164, sms_consent_at, daily_send_time")
           .eq("id", user.id)
           .maybeSingle<ProfileRow>(),
         supabase
@@ -306,6 +316,37 @@ export default function Home() {
         ? preferences.hobbies.filter((item) => item !== hobby)
         : [...preferences.hobbies, hobby]
     });
+  };
+
+  const useBrowserLocation = () => {
+    if (!("geolocation" in navigator)) {
+      setLocationMessage("Browser location is not available here.");
+      return;
+    }
+
+    setIsLocating(true);
+    setLocationMessage("");
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const nextLocation = `Current location (${position.coords.latitude.toFixed(3)}, ${position.coords.longitude.toFixed(3)})`;
+        updatePreferences({
+          ...preferences,
+          location: nextLocation,
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          locationAccuracyM: Math.round(position.coords.accuracy),
+          locationSource: "browser"
+        });
+        setIsLocating(false);
+        setLocationMessage(`Using browser location. Accuracy about ${Math.round(position.coords.accuracy)} m.`);
+      },
+      (error) => {
+        setIsLocating(false);
+        setLocationMessage(error.message || "Could not access browser location.");
+      },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 15 * 60 * 1000 }
+    );
   };
 
   const handleAuth = async () => {
@@ -544,6 +585,10 @@ export default function Home() {
         id: session.user.id,
         display_name: session.user.email,
         location: preferences.location,
+        latitude: preferences.latitude ?? null,
+        longitude: preferences.longitude ?? null,
+        location_accuracy_m: preferences.locationAccuracyM ?? null,
+        location_source: preferences.locationSource ?? "manual",
         phone_e164: phoneNumber || null,
         sms_enabled: preferences.smsEnabled && phoneVerified && smsConsentReady,
         daily_send_time: preferences.sendTime,
@@ -654,13 +699,29 @@ export default function Home() {
             <p className="muted">{todayLabel}</p>
             <h1>Today in {displayForecast.location}</h1>
           </div>
-          <div className="location-control">
-            <span aria-hidden="true">+</span>
-            <input
-              aria-label="Location"
-              value={preferences.location}
-              onChange={(event) => updatePreferences({ ...preferences, location: event.target.value })}
-            />
+          <div className="location-tools">
+            <div className="location-control">
+              <span aria-hidden="true">+</span>
+              <input
+                aria-label="Location"
+                value={preferences.location}
+                onChange={(event) => {
+                  setLocationMessage("");
+                  updatePreferences({
+                    ...preferences,
+                    location: event.target.value,
+                    latitude: null,
+                    longitude: null,
+                    locationAccuracyM: null,
+                    locationSource: "manual"
+                  });
+                }}
+              />
+            </div>
+            <button className="secondary-button location-button" type="button" onClick={useBrowserLocation} disabled={isLocating}>
+              {isLocating ? "Locating..." : "Use my location"}
+            </button>
+            {locationMessage && <small className="field-hint location-message">{locationMessage}</small>}
           </div>
         </header>
 

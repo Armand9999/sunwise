@@ -4,6 +4,10 @@ export const hobbyOptions: Hobby[] = ["Cycling", "Picnics", "Swimming", "Climbin
 
 export const defaultPreferences: Preferences = {
   location: "Toronto",
+  latitude: null,
+  longitude: null,
+  locationAccuracyM: null,
+  locationSource: "manual",
   smsEnabled: true,
   sendTime: "08:00",
   hobbies: ["Cycling", "Picnics", "Markets"],
