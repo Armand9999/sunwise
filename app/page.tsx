@@ -279,6 +279,10 @@ export default function Home() {
   const topActivity = rankedActivities[selected] ?? rankedActivities[0];
   const displayForecast = recommendationResult?.forecast ?? { ...defaultForecast, location: preferences.location };
   const displayHourly = displayForecast.hourly ?? hourly ?? [];
+  const displayLocation =
+    preferences.locationSource === "browser" && preferences.location.startsWith("Current location (")
+      ? "Current location"
+      : displayForecast.location;
   const outfit = recommendationResult?.outfit ?? outfitFor(preferences, displayForecast);
   const smsCopy = recommendationResult?.smsCopy;
   const todayLabel = new Intl.DateTimeFormat("en-US", {
@@ -328,18 +332,40 @@ export default function Home() {
     setLocationMessage("");
 
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const nextLocation = `Current location (${position.coords.latitude.toFixed(3)}, ${position.coords.longitude.toFixed(3)})`;
+      async (position) => {
+        const latitude = position.coords.latitude;
+        const longitude = position.coords.longitude;
+        const coordinateFallback = `Current location (${latitude.toFixed(3)}, ${longitude.toFixed(3)})`;
+        let nextLocation = coordinateFallback;
+
+        setLocationMessage("Finding location name...");
+
+        try {
+          const response = await fetch(
+            `/api/location/reverse-geocode?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`
+          );
+          const payload = await response.json();
+          if (response.ok && payload.label) {
+            nextLocation = payload.label;
+          }
+        } catch {
+          nextLocation = coordinateFallback;
+        }
+
         updatePreferences({
           ...preferences,
           location: nextLocation,
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
+          latitude,
+          longitude,
           locationAccuracyM: Math.round(position.coords.accuracy),
           locationSource: "browser"
         });
         setIsLocating(false);
-        setLocationMessage(`Using browser location. Accuracy about ${Math.round(position.coords.accuracy)} m.`);
+        setLocationMessage(
+          nextLocation === coordinateFallback
+            ? `Using browser coordinates. Accuracy about ${Math.round(position.coords.accuracy)} m.`
+            : `Using ${nextLocation}. Accuracy about ${Math.round(position.coords.accuracy)} m.`
+        );
       },
       (error) => {
         setIsLocating(false);
@@ -697,14 +723,18 @@ export default function Home() {
         <header className="topbar">
           <div>
             <p className="muted">{todayLabel}</p>
-            <h1>Today in {displayForecast.location}</h1>
+            <h1>Today in {displayLocation}</h1>
           </div>
           <div className="location-tools">
             <div className="location-control">
               <span aria-hidden="true">+</span>
               <input
                 aria-label="Location"
-                value={preferences.location}
+                value={
+                  preferences.locationSource === "browser" && preferences.location.startsWith("Current location (")
+                    ? "Current location"
+                    : preferences.location
+                }
                 onChange={(event) => {
                   setLocationMessage("");
                   updatePreferences({
@@ -722,6 +752,9 @@ export default function Home() {
               {isLocating ? "Locating..." : "Use my location"}
             </button>
             {locationMessage && <small className="field-hint location-message">{locationMessage}</small>}
+            {preferences.locationSource === "browser" && (
+              <small className="field-hint location-attribution">Location names © OpenStreetMap contributors</small>
+            )}
           </div>
         </header>
 
