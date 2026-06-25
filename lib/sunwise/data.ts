@@ -32,12 +32,12 @@ export const defaultForecast: Forecast = {
   heatRisk: "moderate",
   bestWindow: "9:30 AM - 12:00 PM",
   hourly: [
-    { time: "8 AM", temp: 22, icon: "sun" },
-    { time: "10 AM", temp: 25, icon: "sun" },
-    { time: "12 PM", temp: 27, icon: "cloud" },
-    { time: "2 PM", temp: 29, icon: "sun" },
-    { time: "4 PM", temp: 28, icon: "rain" },
-    { time: "6 PM", temp: 25, icon: "cloud" }
+    { time: "8 AM", temp: 22, feelsLikeC: 22, rainChance: 5, uvIndex: 1, windKph: 9, humidity: 68, icon: "sun" },
+    { time: "10 AM", temp: 25, feelsLikeC: 26, rainChance: 10, uvIndex: 4, windKph: 12, humidity: 64, icon: "sun" },
+    { time: "12 PM", temp: 27, feelsLikeC: 29, rainChance: 15, uvIndex: 7, windKph: 15, humidity: 62, icon: "cloud" },
+    { time: "2 PM", temp: 29, feelsLikeC: 32, rainChance: 20, uvIndex: 8, windKph: 18, humidity: 60, icon: "sun" },
+    { time: "4 PM", temp: 28, feelsLikeC: 31, rainChance: 55, uvIndex: 4, windKph: 22, humidity: 67, icon: "rain" },
+    { time: "6 PM", temp: 25, feelsLikeC: 27, rainChance: 35, uvIndex: 1, windKph: 16, humidity: 70, icon: "cloud" }
   ]
 };
 

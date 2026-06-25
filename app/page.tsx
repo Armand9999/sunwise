@@ -823,7 +823,7 @@ export default function Home() {
                     <span className="score">{activity.score}% fit</span>
                     <strong>{activity.title}</strong>
                     <span>{activity.time}</span>
-                    <p>{activity.forecast}</p>
+                    <p>{activity.weatherReason || activity.forecast}</p>
                   </button>
                 ))}
               </div>
@@ -842,7 +842,12 @@ export default function Home() {
                     <dt>Budget</dt>
                     <dd>${topActivity.cost} estimate</dd>
                   </div>
+                  <div>
+                    <dt>Weather fit</dt>
+                    <dd>{topActivity.weatherScore ?? "Preview"}/30</dd>
+                  </div>
                 </dl>
+                {topActivity.weatherReason && <p className="weather-reason">{topActivity.weatherReason}</p>}
                 {topActivity.safetyNotes.length > 0 && (
                   <ul className="safety-list">
                     {topActivity.safetyNotes.slice(0, 2).map((note) => (

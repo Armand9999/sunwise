@@ -52,13 +52,20 @@ export type Forecast = {
   hourly?: Array<{
     time: string;
     temp: number;
+    feelsLikeC?: number;
+    rainChance?: number;
+    uvIndex?: number;
+    windKph?: number;
+    humidity?: number;
     icon: "sun" | "cloud" | "rain";
   }>;
 };
 
 export type RankedActivity = Activity & {
   score: number;
+  weatherScore: number;
   weatherFit: "great" | "good" | "caution" | "avoid";
+  weatherReason: string;
   safetyNotes: string[];
   aiReason?: string;
 };

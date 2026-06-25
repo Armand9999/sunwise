@@ -25,9 +25,9 @@ export async function generateRecommendations(preferences: Preferences, forecast
     outfit: enhanced.outfit,
     smsCopy: enhanced.smsCopy,
     guardrailsApplied: [
-      "Budget and intensity scoring",
-      "UV and heat sensitivity checks",
-      "Rain exposure filtering",
+      "Activity-window weather scoring",
+      "Hourly rain, UV, heat, wind, and humidity checks",
+      "Budget, hobby, venue, and intensity scoring",
       "Accessibility note propagation"
     ]
   };

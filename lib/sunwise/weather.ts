@@ -137,7 +137,11 @@ async function geocodeLocation(location: string): Promise<GeocodeResult | null> 
 function hourlyDisplay(data: OpenMeteoForecast) {
   const times = data.hourly?.time ?? [];
   const temperatures = data.hourly?.temperature_2m ?? [];
+  const apparentTemperatures = data.hourly?.apparent_temperature ?? [];
   const rain = data.hourly?.precipitation_probability ?? [];
+  const uv = data.hourly?.uv_index ?? [];
+  const wind = data.hourly?.wind_speed_10m ?? [];
+  const humidity = data.hourly?.relative_humidity_2m ?? [];
   const code = data.daily?.weather_code?.[0];
   const preferredHours = new Set([8, 10, 12, 14, 16, 18]);
   const cells = times
@@ -149,10 +153,28 @@ function hourlyDisplay(data: OpenMeteoForecast) {
       return {
         time: formatHour(hour).replace(":00", ""),
         temp: toNumber(temperatures[index], defaultForecast.temperatureC),
+        feelsLikeC: toNumber(apparentTemperatures[index], temperatures[index] ?? defaultForecast.feelsLikeC),
+        rainChance: toNumber(rain[index], defaultForecast.rainChance),
+        uvIndex: toNumber(uv[index], defaultForecast.uvIndex),
+        windKph: toNumber(wind[index], defaultForecast.windKph),
+        humidity: toNumber(humidity[index], defaultForecast.humidity),
         icon: iconForWeather(code, rain[index] ?? 0)
       };
     })
-    .filter((cell): cell is { time: string; temp: number; icon: "sun" | "cloud" | "rain" } => Boolean(cell));
+    .filter(
+      (
+        cell
+      ): cell is {
+        time: string;
+        temp: number;
+        feelsLikeC: number;
+        rainChance: number;
+        uvIndex: number;
+        windKph: number;
+        humidity: number;
+        icon: "sun" | "cloud" | "rain";
+      } => Boolean(cell)
+    );
 
   return cells.length ? cells : defaultForecast.hourly;
 }

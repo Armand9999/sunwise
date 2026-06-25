@@ -51,7 +51,9 @@ export async function enhanceWithOpenAI(input: {
                 title: activity.title,
                 time: activity.time,
                 score: activity.score,
+                weatherScore: activity.weatherScore,
                 weatherFit: activity.weatherFit,
+                weatherReason: activity.weatherReason,
                 reason: activity.reason,
                 safetyNotes: activity.safetyNotes,
                 cost: activity.cost,
@@ -116,7 +118,10 @@ export async function enhanceWithOpenAI(input: {
         if (!candidate) return items;
         items.push({
           ...candidate,
-          score: typeof item.score === "number" ? Math.max(35, Math.min(98, Math.round(item.score))) : candidate.score,
+          score:
+            typeof item.score === "number"
+              ? Math.max(25, Math.min(98, Math.min(candidate.score + 8, Math.round(item.score))))
+              : candidate.score,
           aiReason: item.reason,
           safetyNotes: item.safetyNotes?.length ? item.safetyNotes : candidate.safetyNotes
         });
