@@ -1,9 +1,13 @@
 import { activities, defaultForecast } from "./data";
 import { outfitFor, rankActivities } from "./guardrails";
 import { enhanceWithOpenAI } from "./openai";
-import type { Forecast, Preferences, RecommendationResult } from "./types";
+import type { Forecast, LocalEvent, Preferences, RecommendationResult } from "./types";
 
-export async function generateRecommendations(preferences: Preferences, forecast: Forecast = defaultForecast): Promise<RecommendationResult> {
+export async function generateRecommendations(
+  preferences: Preferences,
+  forecast: Forecast = defaultForecast,
+  events: LocalEvent[] = []
+): Promise<RecommendationResult> {
   const normalizedForecast = {
     ...forecast,
     location: preferences.location || forecast.location
@@ -22,6 +26,7 @@ export async function generateRecommendations(preferences: Preferences, forecast
     generatedAt: new Date().toISOString(),
     forecast: normalizedForecast,
     recommendations: enhanced.recommendations,
+    events,
     outfit: enhanced.outfit,
     smsCopy: enhanced.smsCopy,
     guardrailsApplied: [

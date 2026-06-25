@@ -386,6 +386,77 @@ button {
   line-height: 1.48;
 }
 
+.local-events {
+  display: grid;
+  gap: 12px;
+}
+
+.event-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.event-card {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 10px 28px rgba(44, 84, 91, 0.06);
+}
+
+.event-card-top,
+.event-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.event-card h3 {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.25;
+}
+
+.event-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.event-meta {
+  font-weight: 800;
+}
+
+.event-card-footer {
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.event-card-footer a {
+  color: var(--accent-strong);
+  text-decoration: none;
+}
+
+.event-empty {
+  margin: 0;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 750;
+}
+
 .score {
   color: var(--green);
   font-size: 12px;
@@ -1120,6 +1191,7 @@ legend {
   .weather-metrics,
   .hourly-strip,
   .activity-list,
+  .event-list,
   .check-grid,
   .admin-stats,
   .admin-stats-grid {
@@ -1149,6 +1221,7 @@ legend {
   .weather-metrics,
   .hourly-strip,
   .activity-list,
+  .event-list,
   .check-grid,
   .insight-panel dl {
     grid-template-columns: 1fr;

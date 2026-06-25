@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { defaultPreferences } from "./data";
+import { discoverLocalEvents } from "./events";
 import { generateRecommendations } from "./recommendations";
 import { sendSms } from "./sms";
 import type { Hobby, Intensity, Preferences, RecommendationResult, Style, Venue } from "./types";
@@ -243,7 +244,8 @@ export async function runDailyDigestDelivery(
           date: deliveryDate,
           coordinates
         });
-        const recommendation = await generateRecommendations(preferences, forecast);
+        const events = await discoverLocalEvents(preferences, forecast);
+        const recommendation = await generateRecommendations(preferences, forecast, events);
         const recommendationId = await insertRecommendation(supabase, profile.id, deliveryDate, recommendation);
         const smsResult = await sendSms(profile.phone_e164!, recommendation.smsCopy);
 

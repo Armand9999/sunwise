@@ -70,11 +70,35 @@ export type RankedActivity = Activity & {
   aiReason?: string;
 };
 
+export type LocalEvent = {
+  id: string;
+  provider: "ticketmaster";
+  title: string;
+  url: string;
+  startAt: string;
+  localDate: string;
+  localTime: string | null;
+  venueName: string | null;
+  city: string | null;
+  region: string | null;
+  distanceKm: number | null;
+  classifications: string[];
+  priceMin: number | null;
+  priceMax: number | null;
+  currency: string | null;
+  imageUrl: string | null;
+  venueType: "indoor" | "outdoor" | "mixed" | "unknown";
+  score: number;
+  weatherFit: "great" | "good" | "caution" | "unknown";
+  reason: string;
+};
+
 export type RecommendationResult = {
   source: "openai" | "local";
   generatedAt: string;
   forecast: Forecast;
   recommendations: RankedActivity[];
+  events: LocalEvent[];
   outfit: string;
   smsCopy: string;
   guardrailsApplied: string[];

@@ -112,6 +112,17 @@ function formatStatusDate(value?: string | null) {
   return value ? new Date(value).toLocaleString() : "Not yet";
 }
 
+function formatEventDate(event: RecommendationResult["events"][number]) {
+  const date = new Date(`${event.localDate}T${event.localTime || "12:00:00"}`);
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: event.localTime ? "numeric" : undefined,
+    minute: event.localTime ? "2-digit" : undefined
+  }).format(date);
+}
+
 function dbRowsToPreferences(profile: ProfileRow | null, preference: PreferenceRow | null): Preferences {
   return {
     ...defaultPreferences,
@@ -230,6 +241,7 @@ export default function Home() {
           generatedAt: recommendationResponse.data.created_at,
           forecast: { ...defaultForecast, location: profileResponse.data?.location || defaultForecast.location },
           recommendations: recommendationResponse.data.recommendations,
+          events: [],
           outfit: recommendationResponse.data.outfit,
           smsCopy: recommendationResponse.data.sms_copy,
           guardrailsApplied: recommendationResponse.data.guardrails_applied
@@ -709,6 +721,7 @@ export default function Home() {
         <nav className="nav-list">
           <a className="nav-item active" href="#today">Today</a>
           <a className="nav-item" href="#activities">Activities</a>
+          <a className="nav-item" href="#events">Events</a>
           <a className="nav-item" href="#wardrobe">Wardrobe</a>
           <a className="nav-item" href="#texts">Texts</a>
         </nav>
@@ -828,6 +841,51 @@ export default function Home() {
                 ))}
               </div>
             </section>
+
+            {recommendationResult && (
+              <section className="local-events" id="events">
+                <div className="section-title">
+                  <div>
+                    <h2>Local events near you</h2>
+                    <p className="source-line">Ticketmaster Discovery</p>
+                  </div>
+                  <p>Ranked by distance, interests, timing, price, and weather suitability.</p>
+                </div>
+                {recommendationResult.events.length ? (
+                  <div className="event-list">
+                    {recommendationResult.events.map((event) => (
+                      <article className="event-card" key={event.id}>
+                        <div className="event-card-top">
+                          <span className="score">{event.score}% fit</span>
+                          <span className={`status-pill ${event.weatherFit === "great" ? "good" : event.weatherFit === "caution" ? "warn" : "soft"}`}>
+                            {event.weatherFit === "unknown" ? "Forecast pending" : `${event.weatherFit} weather`}
+                          </span>
+                        </div>
+                        <h3>{event.title}</h3>
+                        <p className="event-meta">
+                          {formatEventDate(event)}
+                          {event.venueName ? ` · ${event.venueName}` : ""}
+                          {event.distanceKm !== null ? ` · ${event.distanceKm.toFixed(1)} km` : ""}
+                        </p>
+                        <p>{event.reason}</p>
+                        <div className="event-card-footer">
+                          <span>
+                            {event.priceMin !== null
+                              ? `From ${event.currency || ""} ${event.priceMin.toFixed(0)}`
+                              : "Price unavailable"}
+                          </span>
+                          <a href={event.url} target="_blank" rel="noreferrer">
+                            View event
+                          </a>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="event-empty">No Ticketmaster events were found nearby for the next seven days.</p>
+                )}
+              </section>
+            )}
 
             <div className="detail-row">
               <section className="insight-panel">
