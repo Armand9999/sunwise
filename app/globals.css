@@ -49,6 +49,7 @@ button {
 
 .sidebar {
   min-height: 100vh;
+  min-width: 0;
   padding: 28px 20px;
   border-right: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.72);
@@ -155,7 +156,13 @@ button {
   grid-template-columns: minmax(210px, 270px) auto auto;
   gap: 8px;
   justify-content: end;
+  min-width: 0;
   max-width: 100%;
+}
+
+.location-tools > *,
+.location-control input {
+  min-width: 0;
 }
 
 .location-button {
@@ -1122,6 +1129,7 @@ legend {
   }
 
   .sidebar {
+    width: 100%;
     min-height: auto;
     flex-direction: row;
     align-items: center;
@@ -1162,9 +1170,14 @@ legend {
   .location-tools {
     grid-template-columns: 1fr;
     justify-content: stretch;
+    width: 100%;
   }
 
   .location-control {
+    width: 100%;
+  }
+
+  .location-button {
     width: 100%;
   }
 
