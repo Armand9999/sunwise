@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { activities, defaultForecast, defaultPreferences, hobbyOptions, hourly } from "@/lib/sunwise/data";
 import { outfitFor, rankActivities } from "@/lib/sunwise/guardrails";
@@ -169,6 +169,7 @@ function Icon({ name }: { name: string }) {
 
 export default function Home() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+  const loadedProfileUserId = useRef<string | null>(null);
   const [preferences, setPreferences] = useState<Preferences>(defaultPreferences);
   const [selected, setSelected] = useState(0);
   const [saved, setSaved] = useState(false);
@@ -197,6 +198,7 @@ export default function Home() {
   const [isSmsStatusLoading, setIsSmsStatusLoading] = useState(false);
   const [smsStatusMessage, setSmsStatusMessage] = useState("");
   const [isLocating, setIsLocating] = useState(false);
+  const [isSavingLocation, setIsSavingLocation] = useState(false);
   const [locationMessage, setLocationMessage] = useState("");
 
   const loadProfile = useCallback(
@@ -266,13 +268,21 @@ export default function Home() {
       setSession(data.session);
       setIsAuthLoading(false);
       if (data.session?.user) {
+        loadedProfileUserId.current = data.session.user.id;
         void loadProfile(data.session.user);
       }
     });
 
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession);
-      if (nextSession?.user) {
+      if (event === "SIGNED_OUT") {
+        loadedProfileUserId.current = null;
+      } else if (
+        nextSession?.user &&
+        (event === "USER_UPDATED" ||
+          (event === "SIGNED_IN" && loadedProfileUserId.current !== nextSession.user.id))
+      ) {
+        loadedProfileUserId.current = nextSession.user.id;
         void loadProfile(nextSession.user);
       }
     });
@@ -334,6 +344,43 @@ export default function Home() {
     });
   };
 
+  const saveLocation = async (nextPreferences: Preferences) => {
+    if (!supabase || !session?.user) {
+      setLocationMessage("Sign in to save this location across devices.");
+      return false;
+    }
+
+    if (!nextPreferences.location.trim()) {
+      setLocationMessage("Enter a location before saving.");
+      return false;
+    }
+
+    setIsSavingLocation(true);
+    setLocationMessage("");
+
+    const response = await supabase.from("profiles").upsert({
+      id: session.user.id,
+      display_name: session.user.email,
+      location: nextPreferences.location.trim(),
+      latitude: nextPreferences.latitude ?? null,
+      longitude: nextPreferences.longitude ?? null,
+      location_accuracy_m: nextPreferences.locationAccuracyM ?? null,
+      location_source: nextPreferences.locationSource ?? "manual",
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Toronto",
+      updated_at: new Date().toISOString()
+    });
+
+    setIsSavingLocation(false);
+
+    if (response.error) {
+      setLocationMessage(response.error.message);
+      return false;
+    }
+
+    setLocationMessage(`Saved ${nextPreferences.location.trim()}.`);
+    return true;
+  };
+
   const useBrowserLocation = () => {
     if (!("geolocation" in navigator)) {
       setLocationMessage("Browser location is not available here.");
@@ -364,20 +411,27 @@ export default function Home() {
           nextLocation = coordinateFallback;
         }
 
-        updatePreferences({
+        const nextPreferences: Preferences = {
           ...preferences,
           location: nextLocation,
           latitude,
           longitude,
           locationAccuracyM: Math.round(position.coords.accuracy),
           locationSource: "browser"
-        });
+        };
+        updatePreferences(nextPreferences);
         setIsLocating(false);
-        setLocationMessage(
-          nextLocation === coordinateFallback
-            ? `Using browser coordinates. Accuracy about ${Math.round(position.coords.accuracy)} m.`
-            : `Using ${nextLocation}. Accuracy about ${Math.round(position.coords.accuracy)} m.`
-        );
+        const savedLocation = await saveLocation(nextPreferences);
+        if (!savedLocation && session?.user) {
+          return;
+        }
+        if (!session?.user) {
+          setLocationMessage(
+            nextLocation === coordinateFallback
+              ? `Using browser coordinates. Sign in to save them.`
+              : `Using ${nextLocation}. Sign in to save it.`
+          );
+        }
       },
       (error) => {
         setIsLocating(false);
@@ -763,6 +817,14 @@ export default function Home() {
             </div>
             <button className="secondary-button location-button" type="button" onClick={useBrowserLocation} disabled={isLocating}>
               {isLocating ? "Locating..." : "Use my location"}
+            </button>
+            <button
+              className="secondary-button location-button"
+              type="button"
+              onClick={() => saveLocation(preferences)}
+              disabled={isSavingLocation || !preferences.location.trim()}
+            >
+              {isSavingLocation ? "Saving..." : "Save location"}
             </button>
             {locationMessage && <small className="field-hint location-message">{locationMessage}</small>}
             {preferences.locationSource === "browser" && (
