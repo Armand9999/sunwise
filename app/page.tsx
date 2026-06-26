@@ -163,6 +163,13 @@ function Icon({ name }: { name: string }) {
       {name === "message" && <path d="M5 5.5h14v9.8H9.4L5 19.1V5.5Z" />}
       {name === "shirt" && <path d="M9 4.5 12 6l3-1.5 4 3-2.2 3L15 9.4v10.1H9V9.4l-1.8 1.1L5 7.5l4-3Z" />}
       {name === "check" && <path d="m5 12.5 4.2 4.2L19 7" />}
+      {name === "home" && <path d="m3.5 11 8.5-7 8.5 7M6 10v9h12v-9M10 19v-5h4v5" />}
+      {name === "bike" && <path d="M5.5 17.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM18.5 17.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM8.5 14.5h4l2-5h-3M12.5 14.5l-3.2-5H7M14.5 9.5l2.7 5M11.2 6.5h2.8" />}
+      {name === "history" && <path d="M4 12a8 8 0 1 0 2.4-5.7M4 5v5h5M12 8v4.4l3 1.6" />}
+      {name === "settings" && <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7ZM19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.4-2.4 1a7.5 7.5 0 0 0-2-1.2L14.2 3h-4.4l-.4 2.7a7.5 7.5 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.5A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.4 2.4-1a7.5 7.5 0 0 0 2 1.2l.4 2.7h4.4l.4-2.7a7.5 7.5 0 0 0 2-1.2l2.4 1 2-3.4-2-1.5c.1-.4.1-.8.1-1.2Z" />}
+      {name === "pin" && <path d="M12 21s7-5.4 7-11a7 7 0 1 0-14 0c0 5.6 7 11 7 11ZM12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />}
+      {name === "calendar" && <path d="M7 3.5v3M17 3.5v3M4.5 8h15M6 5.5h12a1.5 1.5 0 0 1 1.5 1.5v11A1.5 1.5 0 0 1 18 19.5H6A1.5 1.5 0 0 1 4.5 18V7A1.5 1.5 0 0 1 6 5.5Z" />}
+      {name === "spark" && <path d="M12 3.5 13.8 9l5.7 1.5-5.7 1.7L12 17.5l-1.8-5.3-5.7-1.7L10.2 9 12 3.5ZM18 16.5l.7 2.1 2.1.7-2.1.7-.7 2.1-.7-2.1-2.1-.7 2.1-.7.7-2.1Z" />}
     </svg>
   );
 }
@@ -769,28 +776,51 @@ export default function Home() {
     <main className="app-shell">
       <aside className="sidebar" aria-label="Primary">
         <div className="brand">
-          <span className="brand-mark">S</span>
+          <span className="brand-mark"><Icon name="sun" /></span>
           <span>Sunwise</span>
         </div>
         <nav className="nav-list">
-          <a className="nav-item active" href="#today">Today</a>
-          <a className="nav-item" href="#activities">Activities</a>
-          <a className="nav-item" href="#events">Events</a>
-          <a className="nav-item" href="#wardrobe">Wardrobe</a>
-          <a className="nav-item" href="#texts">Texts</a>
+          <a className="nav-item active" href="#today"><Icon name="home" />Dashboard</a>
+          <a className="nav-item" href="#today"><Icon name="cloud" />Weather</a>
+          <a className="nav-item" href="#activities"><Icon name="bike" />Activities</a>
+          <a className="nav-item" href="#events"><Icon name="calendar" />Events</a>
+          <a className="nav-item" href="#wardrobe"><Icon name="shirt" />Outfits</a>
+          <a className="nav-item" href="#texts"><Icon name="message" />Messages</a>
+          <a className="nav-item" href="#texts"><Icon name="settings" />Settings</a>
         </nav>
+        <div className="sidebar-scene" aria-hidden="true">
+          <div className="scene-sun" />
+          <div className="scene-water" />
+          <div className="scene-skyline">
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+        </div>
         <div className="digest-card">
           <Icon name="message" />
           <p>Morning digest</p>
           <strong>{preferences.smsEnabled ? `Send at ${formatSendTime(preferences.sendTime)}` : "Paused"}</strong>
+        </div>
+        <div className="account-card">
+          <span className="avatar">{session?.user.email?.charAt(0).toUpperCase() || "S"}</span>
+          <span>
+            <strong>{session?.user.email?.split("@")[0] || "Sunwise guest"}</strong>
+            <small>{session?.user.email || "Sign in to sync"}</small>
+          </span>
         </div>
       </aside>
 
       <section className="workspace">
         <header className="topbar">
           <div>
-            <p className="muted">{todayLabel}</p>
-            <h1>Today in {displayLocation}</h1>
+            <div className="eyebrow-row">
+              <span><Icon name="pin" />Today in {displayLocation}</span>
+              <span><Icon name="calendar" />{todayLabel}</span>
+            </div>
+            <h1>Your summer day, tuned to the forecast</h1>
           </div>
           <div className="location-tools">
             <div className="location-control">
@@ -837,30 +867,47 @@ export default function Home() {
           <section className="main-column" id="today">
             <div className="weather-panel">
               <div className="weather-hero">
-                <div>
+                <div className="weather-visual" aria-hidden="true">
+                  <Icon name="sun" />
+                  <span className="cloud-puff one" />
+                  <span className="cloud-puff two" />
+                  <span className="bird bird-one" />
+                  <span className="bird bird-two" />
+                </div>
+                <div className="weather-now">
                   <p className="muted">
                     {displayForecast.provider === "open-meteo" ? "Live Open-Meteo forecast" : "Preview forecast"}
                   </p>
                   <div className="temp-row">
-                    <span>{displayForecast.temperatureC}C</span>
-                    <Icon name="sun" />
+                    <span>{displayForecast.temperatureC}<sup>C</sup></span>
                   </div>
-                  <p>
-                    {displayForecast.summary}. Feels like {displayForecast.feelsLikeC}. Best window: {displayForecast.bestWindow}.
-                  </p>
+                  <p>Feels like {displayForecast.feelsLikeC}. {displayForecast.summary}.</p>
                 </div>
                 <div className="weather-metrics">
                   <div>
+                    <Icon name="sun" />
                     <strong>UV {displayForecast.uvIndex}</strong>
                     <span>{displayForecast.uvIndex >= 7 ? "High" : displayForecast.uvIndex >= 4 ? "Moderate" : "Low"}</span>
                   </div>
                   <div>
+                    <Icon name="rain" />
                     <strong>Rain {displayForecast.rainChance}%</strong>
                     <span>{displayForecast.rainChance >= 50 ? "Likely" : "Chance"}</span>
                   </div>
                   <div>
+                    <Icon name="spark" />
                     <strong>{displayForecast.windKph} km/h</strong>
                     <span>Max wind</span>
+                  </div>
+                  <div>
+                    <Icon name="check" />
+                    <strong>{topActivity.score}%</strong>
+                    <span>Best fit</span>
+                  </div>
+                  <div>
+                    <Icon name="calendar" />
+                    <strong>{displayForecast.bestWindow}</strong>
+                    <span>Best window</span>
                   </div>
                 </div>
               </div>
@@ -869,7 +916,8 @@ export default function Home() {
                   <div className="hour-cell" key={hour.time}>
                     <span>{hour.time}</span>
                     <Icon name={hour.icon} />
-                    <strong>{hour.temp} deg</strong>
+                    <strong>{hour.temp}C</strong>
+                    {"rainChance" in hour && <small>{hour.rainChance}%</small>}
                   </div>
                 ))}
               </div>
@@ -878,7 +926,7 @@ export default function Home() {
             <section className="recommendations" id="activities">
               <div className="section-title">
                 <div>
-                  <h2>Recommended for your summer</h2>
+                  <h2>Recommended for you</h2>
                   <p className="source-line">
                     {recommendationResult
                       ? `${recommendationResult.source === "openai" ? "AI-enhanced" : "Local"} plan generated`
@@ -895,10 +943,12 @@ export default function Home() {
                     key={activity.id}
                     onClick={() => setSelected(index)}
                   >
+                    <span className="activity-art" aria-hidden="true"><Icon name={activity.venue === "Indoor" ? "home" : "bike"} /></span>
                     <span className="score">{activity.score}% fit</span>
                     <strong>{activity.title}</strong>
-                    <span>{activity.time}</span>
+                    <span className="best-window">Best window: {activity.time}</span>
                     <p>{activity.weatherReason || activity.forecast}</p>
+                    <span className="select-label">{index === selected ? "Selected" : "Select"}</span>
                   </button>
                 ))}
               </div>
@@ -950,7 +1000,7 @@ export default function Home() {
             )}
 
             <div className="detail-row">
-              <section className="insight-panel">
+              <section className="insight-panel digest-preview">
                 <h2>{topActivity.title}</h2>
                 <p>{topActivity.aiReason ?? topActivity.reason}</p>
                 <dl>
@@ -980,7 +1030,11 @@ export default function Home() {
               <section className="outfit-panel" id="wardrobe">
                 <div className="panel-heading">
                   <Icon name="shirt" />
-                  <h2>Wear today</h2>
+                  <h2>Outfit suggestion</h2>
+                </div>
+                <div className="outfit-visual" aria-hidden="true">
+                  <span className="shirt-shape" />
+                  <span className="shorts-shape" />
                 </div>
                 <p>Wear: {outfit}</p>
                 {smsCopy && <p className="sms-preview">{smsCopy}</p>}
@@ -1068,6 +1122,7 @@ export default function Home() {
               </div>
               <span className="progress">7/9</span>
             </div>
+            <div className="progress-bar" aria-hidden="true"><span /></div>
 
             <label className="toggle-row">
               <span>
