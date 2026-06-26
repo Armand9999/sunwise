@@ -229,12 +229,16 @@ button {
 }
 
 .topbar {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(420px, auto);
   align-items: center;
   justify-content: space-between;
   gap: 18px;
   margin-bottom: 18px;
+}
+
+.topbar > * {
+  min-width: 0;
 }
 
 .topbar h1 {
@@ -251,17 +255,36 @@ button {
   gap: 18px;
   color: #172033;
   font-weight: 820;
+  min-width: 0;
 }
 
 .eyebrow-row span {
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  min-width: 0;
 }
 
 .eyebrow-row .icon {
+  flex: 0 0 auto;
   width: 19px;
   height: 19px;
+}
+
+.location-label {
+  max-width: min(46vw, 520px);
+}
+
+.location-label {
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.location-label-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .muted {
@@ -281,6 +304,7 @@ button {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
+  overflow: hidden;
 }
 
 .location-tools {
@@ -306,6 +330,7 @@ button {
 .location-attribution {
   grid-column: 1 / -1;
   text-align: right;
+  min-height: 15px;
 }
 
 .location-attribution {
@@ -323,6 +348,7 @@ button {
   color: var(--ink);
   background: transparent;
   font-weight: 700;
+  text-overflow: ellipsis;
 }
 
 .content-grid {
@@ -1548,10 +1574,29 @@ legend {
   }
 
   .sidebar,
-  .topbar,
   .section-title {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .topbar {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .eyebrow-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+  }
+
+  .location-label {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .location-label-text {
+    display: block;
   }
 
   .location-tools {

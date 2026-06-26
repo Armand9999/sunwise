@@ -207,6 +207,7 @@ export default function Home() {
   const [isLocating, setIsLocating] = useState(false);
   const [isSavingLocation, setIsSavingLocation] = useState(false);
   const [locationMessage, setLocationMessage] = useState("");
+  const [locationDraft, setLocationDraft] = useState(defaultPreferences.location);
 
   const loadProfile = useCallback(
     async (user: User) => {
@@ -235,7 +236,9 @@ export default function Home() {
       ]);
 
       if (!profileResponse.error && !preferenceResponse.error) {
-        setPreferences(dbRowsToPreferences(profileResponse.data, preferenceResponse.data));
+        const nextPreferences = dbRowsToPreferences(profileResponse.data, preferenceResponse.data);
+        setPreferences(nextPreferences);
+        setLocationDraft(nextPreferences.location);
         setPhoneNumber(profileResponse.data?.phone_e164 || "");
         setVerifiedPhone(profileResponse.data?.sms_verified_phone_e164 || "");
         setSmsVerifiedAt(profileResponse.data?.sms_verified_at || "");
@@ -384,8 +387,28 @@ export default function Home() {
       return false;
     }
 
-    setLocationMessage(`Saved ${nextPreferences.location.trim()}.`);
+    setLocationMessage("Location saved.");
     return true;
+  };
+
+  const commitManualLocation = async () => {
+    const nextLocation = locationDraft.trim();
+    if (!nextLocation) {
+      setLocationMessage("Enter a location before saving.");
+      return;
+    }
+
+    const nextPreferences: Preferences = {
+      ...preferences,
+      location: nextLocation,
+      latitude: null,
+      longitude: null,
+      locationAccuracyM: null,
+      locationSource: "manual"
+    };
+
+    updatePreferences(nextPreferences);
+    await saveLocation(nextPreferences);
   };
 
   const useBrowserLocation = () => {
@@ -426,6 +449,7 @@ export default function Home() {
           locationAccuracyM: Math.round(position.coords.accuracy),
           locationSource: "browser"
         };
+        setLocationDraft(nextLocation);
         updatePreferences(nextPreferences);
         setIsLocating(false);
         const savedLocation = await saveLocation(nextPreferences);
@@ -435,8 +459,8 @@ export default function Home() {
         if (!session?.user) {
           setLocationMessage(
             nextLocation === coordinateFallback
-              ? `Using browser coordinates. Sign in to save them.`
-              : `Using ${nextLocation}. Sign in to save it.`
+              ? "Using browser coordinates. Sign in to save them."
+              : "Using browser location. Sign in to save it."
           );
         }
       },
@@ -817,7 +841,10 @@ export default function Home() {
         <header className="topbar">
           <div>
             <div className="eyebrow-row">
-              <span><Icon name="pin" />Today in {displayLocation}</span>
+              <span className="location-label">
+                <Icon name="pin" />
+                <span className="location-label-text">Today in {displayLocation}</span>
+              </span>
               <span><Icon name="calendar" />{todayLabel}</span>
             </div>
             <h1>Your summer day, tuned to the forecast</h1>
@@ -827,21 +854,16 @@ export default function Home() {
               <span aria-hidden="true">+</span>
               <input
                 aria-label="Location"
-                value={
-                  preferences.locationSource === "browser" && preferences.location.startsWith("Current location (")
-                    ? "Current location"
-                    : preferences.location
-                }
+                value={locationDraft}
                 onChange={(event) => {
-                  setLocationMessage("");
-                  updatePreferences({
-                    ...preferences,
-                    location: event.target.value,
-                    latitude: null,
-                    longitude: null,
-                    locationAccuracyM: null,
-                    locationSource: "manual"
-                  });
+                  setLocationDraft(event.target.value);
+                  setLocationMessage("Save to update today’s forecast.");
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void commitManualLocation();
+                  }
                 }}
               />
             </div>
@@ -851,8 +873,8 @@ export default function Home() {
             <button
               className="secondary-button location-button"
               type="button"
-              onClick={() => saveLocation(preferences)}
-              disabled={isSavingLocation || !preferences.location.trim()}
+              onClick={commitManualLocation}
+              disabled={isSavingLocation || !locationDraft.trim()}
             >
               {isSavingLocation ? "Saving..." : "Save location"}
             </button>
